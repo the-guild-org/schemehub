@@ -1,8 +1,38 @@
-import { SchemaEditor } from "@theguild/editor";
+import { SchemaEditor, SchemaEditorProps } from "@theguild/editor";
 import React from "react";
 
-export const Editor: React.FC<{
+const Editor: React.FC<{
   schema: string;
-}> = ({ schema }) => {
-  return <SchemaEditor height={"100vh"} theme={"vs-dark"} schema={schema} />;
+  onUserSave?: (content: string) => void;
+  editorProps?: SchemaEditorProps;
+}> = ({ onUserSave, schema, editorProps = {} }) => {
+  return (
+    <SchemaEditor
+      schema={schema}
+      keyboardShortcuts={(editor, monaco) => {
+        const shortcuts = [];
+
+        if (onUserSave) {
+          shortcuts.push({
+            id: "copy-clipboard",
+            label: "Save",
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S],
+            contextMenuGroupId: "run",
+            contextMenuOrder: 1.5,
+            run: (editor: any) => {
+              const content = editor.getModel()?.getValue() || "";
+              if (content) {
+                onUserSave(content);
+              }
+            },
+          });
+        }
+
+        return shortcuts;
+      }}
+      {...editorProps}
+    />
+  );
 };
+
+export default Editor;
