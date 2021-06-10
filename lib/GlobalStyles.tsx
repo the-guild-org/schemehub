@@ -5,6 +5,15 @@ const customStyles = css`
   html,
   body,
   #__next {
+    ${tw`w-screen h-screen overflow-y-auto`}
+    font-family: 'Lato', sans-serif;
+  }
+
+  .chakra-container {
+    ${tw`w-screen h-screen overflow-y-auto`}
+  }
+
+  #__next {
     ${tw`flex flex-col h-full text-sm antialiased text-gray-700 lg:text-base`}
   }
 `;

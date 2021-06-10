@@ -13,7 +13,16 @@ export default class MyDocument extends Document {
   render() {
     return (
       <Html>
-        <Head />
+        <Head>
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `
+            *:active, *:focus {
+              outline: none !important;
+            }`,
+            }}
+          />
+        </Head>
         <body>
           <Main />
           <NextScript />
