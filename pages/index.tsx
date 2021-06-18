@@ -36,6 +36,7 @@ import { saveSchema } from "../lib/saveSchema";
 import { fetchSchema } from "../lib/getSchema";
 import { randomHash } from "../lib/randomHash";
 import { randomName } from "../lib/randomName";
+import { generateRandomHslColor } from "../lib/generateHSLAColors";
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
@@ -235,11 +236,12 @@ export default function Home() {
         name = randomName();
         window.localStorage.setItem("collaboratorName", name);
       }
+      return name;
     };
-    provider.awareness.setLocalStateField(
-      "collaboratorName",
-      getCollaboratorName()
-    );
+    provider.awareness.setLocalStateField("collaborator", {
+      name: getCollaboratorName(),
+      color: generateRandomHslColor(),
+    });
     new MonacoBinding(
       api,
       ydocument.getText("monaco"),

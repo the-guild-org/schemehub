@@ -34,3 +34,15 @@ a {
   left: -4px;
   top: -5px;
 }
+
+.monaco-remote-cursor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4000;
+  width: fit-content;
+  white-space: nowrap;
+  font-size: 10px;
+  padding-left: 4px;
+  padding-right: 4px;
+  border-radius: 4px;
+}

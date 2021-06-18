@@ -71,6 +71,45 @@ const createMonacoSelectionFromRelativeSelection = (
   return null;
 };
 
+const getColorByBgColor = (bgColor: string) =>
+  parseInt(bgColor.replace("#", ""), 16) > 0xffffff / 2 ? "#000" : "#fff";
+
+class RemoteCursorWidget implements monaco.editor.IContentWidget {
+  id: string;
+  tooltip: HTMLElement;
+  position: monaco.editor.IContentWidgetPosition;
+
+  constructor(
+    id: string,
+    lineHeight: number,
+    name: string,
+    color: string,
+    position: monaco.editor.IContentWidgetPosition
+  ) {
+    this.id = id;
+
+    const tooltip = (this.tooltip = document.createElement("div"));
+    tooltip.className = "monaco-remote-cursor";
+    tooltip.style.background = color;
+    tooltip.style.color = getColorByBgColor(color);
+    tooltip.style.height = `${lineHeight}px`;
+    tooltip.innerHTML = name;
+    this.position = position;
+  }
+
+  getId() {
+    return this.id;
+  }
+
+  getDomNode() {
+    return this.tooltip;
+  }
+
+  getPosition() {
+    return this.position;
+  }
+}
+
 export class MonacoBinding {
   api: typeof monaco;
   doc: Y.Doc;
@@ -86,6 +125,12 @@ export class MonacoBinding {
   >;
   private _beforeTransaction: () => void;
   private _decorations: Map<monaco.editor.IStandaloneCodeEditor, Array<string>>;
+
+  private _collaboratorTooltips: Map<
+    monaco.editor.IStandaloneCodeEditor,
+    Array<monaco.editor.IContentWidget>
+  >;
+
   private _rerenderDecorations: () => void;
   private _monacoChangeHandler: monaco.IDisposable;
   private _ytextObserver: any;
@@ -125,9 +170,18 @@ export class MonacoBinding {
     this._rerenderDecorations = () => {
       editors.forEach((editor) => {
         if (awareness && editor.getModel() === monacoModel) {
+          this._collaboratorTooltips.get(editor)?.forEach((item) => {
+            editor.removeContentWidget(item);
+          });
+
+          const lineHeight = editor.getOption(
+            this.api.editor.EditorOption.lineHeight
+          );
+
           // render decorations
           const currentDecorations = this._decorations.get(editor) || [];
           const newDecorations: Array<monaco.editor.IModelDeltaDecoration> = [];
+          const tooltips: Array<monaco.editor.IContentWidget> = [];
           awareness.getStates().forEach((state, clientID) => {
             if (
               clientID !== this.doc.clientID &&
@@ -161,19 +215,36 @@ export class MonacoBinding {
                   afterContentClassName = null;
                   beforeContentClassName = "yRemoteSelectionHead";
                 }
+                const range = new this.api.Range(
+                  start.lineNumber,
+                  start.column,
+                  end.lineNumber,
+                  end.column
+                );
                 newDecorations.push({
-                  range: new this.api.Range(
-                    start.lineNumber,
-                    start.column,
-                    end.lineNumber,
-                    end.column
-                  ),
+                  range,
                   options: {
                     className: "yRemoteSelection",
                     afterContentClassName,
                     beforeContentClassName,
                   },
                 });
+                const tooltipWidget = new RemoteCursorWidget(
+                  String(clientID),
+                  lineHeight,
+                  state.collaborator?.name ?? "Ano Nym",
+                  state.collaborator?.color ?? "#fff",
+                  {
+                    position: null,
+                    range,
+                    preference: [
+                      this.api.editor.ContentWidgetPositionPreference.ABOVE,
+                    ],
+                  }
+                );
+
+                tooltips.push(tooltipWidget);
+                editor.addContentWidget(tooltipWidget);
               }
             }
           });
@@ -181,6 +252,8 @@ export class MonacoBinding {
             editor,
             editor.deltaDecorations(currentDecorations, newDecorations)
           );
+
+          this._collaboratorTooltips.set(editor, tooltips);
         } else {
           // ignore decorations
           this._decorations.delete(editor);
@@ -257,50 +330,50 @@ export class MonacoBinding {
     monacoModel.onWillDispose(() => {
       this.destroy();
     });
-    if (awareness) {
-      editors.forEach((editor) => {
-        editor.onDidChangeCursorSelection(() => {
-          if (editor.getModel() === monacoModel) {
-            const sel = editor.getSelection();
-            if (sel === null) {
-              return;
-            }
-            let anchor = monacoModel.getOffsetAt(sel.getStartPosition());
-            let head = monacoModel.getOffsetAt(sel.getEndPosition());
-            if (sel.getDirection() === this.api.SelectionDirection.RTL) {
-              const tmp = anchor;
-              anchor = head;
-              head = tmp;
-            }
-            awareness.setLocalStateField("selection", {
-              anchor: Y.createRelativePositionFromTypeIndex(ytext, anchor),
-              head: Y.createRelativePositionFromTypeIndex(ytext, head),
-            });
+    this._collaboratorTooltips = new Map();
+
+    editors.forEach((editor) => {
+      editor.onDidChangeCursorSelection(() => {
+        if (editor.getModel() === monacoModel) {
+          const sel = editor.getSelection();
+          if (sel === null) {
+            return;
           }
-        });
-        awareness.on("change", this._rerenderDecorations);
+          let anchor = monacoModel.getOffsetAt(sel.getStartPosition());
+          let head = monacoModel.getOffsetAt(sel.getEndPosition());
+          if (sel.getDirection() === this.api.SelectionDirection.RTL) {
+            const tmp = anchor;
+            anchor = head;
+            head = tmp;
+          }
+          awareness.setLocalStateField("selection", {
+            anchor: Y.createRelativePositionFromTypeIndex(ytext, anchor),
+            head: Y.createRelativePositionFromTypeIndex(ytext, head),
+          });
+        }
       });
-      this.awareness = awareness;
+      awareness.on("change", this._rerenderDecorations);
+    });
+    this.awareness = awareness;
 
-      // We wait 100ms, if no other user is connected, our initial value will be the source of truth
-      let timeout = setTimeout(() => {
-        monacoModel.applyEdits([
-          {
-            range: {
-              startColumn: 0,
-              startLineNumber: 0,
-              endLineNumber: 0,
-              endColumn: 0,
-            },
-            text: value,
+    // We wait 100ms, if no other user is connected, our initial value will be the source of truth
+    let timeout = setTimeout(() => {
+      monacoModel.applyEdits([
+        {
+          range: {
+            startColumn: 0,
+            startLineNumber: 0,
+            endLineNumber: 0,
+            endColumn: 0,
           },
-        ]);
-      }, 100);
+          text: value,
+        },
+      ]);
+    }, 100);
 
-      this.awareness.on("change", () => {
-        clearTimeout(timeout);
-      });
-    }
+    this.awareness.on("change", () => {
+      clearTimeout(timeout);
+    });
   }
 
   destroy() {
