@@ -6,27 +6,32 @@ const Editor: React.FC<{
   onUserSave?: (content: string) => void;
   editorProps?: SchemaEditorProps;
 }> = ({ onUserSave, schema, editorProps = {} }) => {
+  const latestOnUserSave = React.useRef(onUserSave);
+  React.useEffect(() => {
+    latestOnUserSave.current = onUserSave;
+  });
+
   return (
     <SchemaEditor
       schema={schema}
       keyboardShortcuts={(editor, monaco) => {
         const shortcuts = [];
 
-        if (onUserSave) {
-          shortcuts.push({
-            id: "copy-clipboard",
-            label: "Save",
-            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S],
-            contextMenuGroupId: "run",
-            contextMenuOrder: 1.5,
-            run: (editor: any) => {
+        shortcuts.push({
+          id: "copy-clipboard",
+          label: "Save",
+          keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S],
+          contextMenuGroupId: "run",
+          contextMenuOrder: 1.5,
+          run: (editor: any) => {
+            if (latestOnUserSave.current) {
               const content = editor.getModel()?.getValue() || "";
               if (content) {
-                onUserSave(content);
+                latestOnUserSave.current(content);
               }
-            },
-          });
-        }
+            }
+          },
+        });
 
         return shortcuts;
       }}

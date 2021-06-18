@@ -1,9 +1,5 @@
 import { useToast, SimpleGrid, Box } from "@chakra-ui/react";
 import SchemaEditor from "../components/schema-viewer";
-import {
-  decompressFromEncodedURIComponent,
-  compressToEncodedURIComponent,
-} from "lz-string";
 import { useRouter } from "next/dist/client/router";
 import React from "react";
 import { Page } from "../components/common";
@@ -32,6 +28,9 @@ import {
   isObjectType,
   isScalarType,
 } from "graphql";
+import { saveSchema } from "../lib/saveSchema";
+import { fetchSchema } from "../lib/getSchema";
+import { randomHash } from "../lib/randomHash";
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
@@ -135,17 +134,16 @@ function createFromSchema(schema: GraphQLSchema): Elements {
 const URL_PREFIX = "/#/code/";
 
 export default function Home() {
+  const [schemaId, setSchemaId] = React.useState<null | string>(null);
   const [initialEditorSchema, setInitialSchema] =
-    React.useState(DEFAULT_SCHEMA);
-  const [schema, setSchema] = React.useState<GraphQLSchema | null>(
-    buildSchema(initialEditorSchema)
-  );
+    React.useState<string | null>(null);
+  const [schema, setSchema] = React.useState<GraphQLSchema | null>(null);
   const toast = useToast();
   const route = useRouter();
 
   const languageService = React.useMemo(() => {
     const service = new EnrichedLanguageService({
-      schemaString: initialEditorSchema,
+      schemaString: initialEditorSchema ?? "",
       schemaConfig: {
         buildSchemaOptions: {
           assumeValid: true,
@@ -170,13 +168,23 @@ export default function Home() {
 
   React.useEffect(() => {
     if (route.asPath && route.asPath.startsWith(URL_PREFIX)) {
-      const compressedHash = route.asPath.replace(URL_PREFIX, "");
-      const value = decompressFromEncodedURIComponent(compressedHash);
-
-      if (value) {
-        setInitialSchema(value);
-        setSchema(buildSchema(value));
+      const schemaId = route.asPath.replace(URL_PREFIX, "");
+      const value = schemaId;
+      if (value == null) {
+        return;
       }
+      fetchSchema(value).then((res) => {
+        if ("error" in res) {
+          console.error(res.error);
+          return;
+        }
+
+        setSchemaId(schemaId);
+        setInitialSchema(res.data.sdl);
+        setSchema(buildSchema(res.data.sdl));
+      });
+    } else {
+      setInitialSchema(DEFAULT_SCHEMA);
     }
   }, []);
 
@@ -189,32 +197,45 @@ export default function Home() {
     }
   }, [schema, languageService]);
 
+  const latestSchemaId = React.useRef(schemaId);
+  React.useEffect(() => {
+    latestSchemaId.current = schemaId;
+  });
+
   return (
     <Page>
       <SimpleGrid columns={2} spacing={4} p={8} background={"black"}>
         <Box border="1px solid #E535AB" borderRadius={6} overflow={"hidden"}>
-          <SchemaEditor
-            editorProps={{
-              height: "84vh",
-              theme: "vs-dark",
-              options: {
-                automaticLayout: true,
-                minimap: {
-                  enabled: false,
+          {initialEditorSchema ? (
+            <SchemaEditor
+              editorProps={{
+                height: "84vh",
+                theme: "vs-dark",
+                options: {
+                  automaticLayout: true,
+                  minimap: {
+                    enabled: false,
+                  },
                 },
-              },
-              sharedLanguageService: languageService,
-            }}
-            schema={initialEditorSchema}
-            onUserSave={(content) => {
-              const newURL = `${URL_PREFIX}${compressToEncodedURIComponent(
-                content.trim()
-              )}`;
+                sharedLanguageService: languageService,
+              }}
+              schema={initialEditorSchema}
+              onUserSave={async (content) => {
+                let id = latestSchemaId.current;
+                if (id == null) {
+                  id = randomHash();
+                  setSchemaId(id);
 
-              window.history.replaceState({}, "", newURL);
-              window.navigator.clipboard
-                .writeText(location.href.toString())
-                .then(
+                  const newURL = `${URL_PREFIX}${id}`;
+
+                  window.history.replaceState({}, "", newURL);
+                }
+                Promise.all([
+                  saveSchema(id, content),
+                  window.navigator.clipboard.writeText(
+                    location.href.toString()
+                  ),
+                ]).then(
                   () => {
                     toast({
                       isClosable: true,
@@ -225,8 +246,9 @@ export default function Home() {
                   },
                   (e: any) => alert(e)
                 );
-            }}
-          />
+              }}
+            />
+          ) : null}
         </Box>
         <Box
           border="1px solid #E535AB"
