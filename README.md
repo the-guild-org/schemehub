@@ -1,5 +1,25 @@
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
+## Install dependencies
+
+```bash
+yarn
+```
+
+## Setup database (ThreadDB)
+
+```bash
+cp .env.local.sample .env.local
+```
+
+Setup `TEXTILE_API_PUBLIC_KEY` and `TEXTILE_API_SECRET_KEY` within `.env.local` (You need to create an account on https://textile.io).
+
+```bash
+yarn ts-node scripts/seed-thread
+```
+
+Copy the printed `THREAD_ID` into `.env.local`.
+
 ## Getting Started
 
 First, run the development server:
