@@ -1,3 +1,6 @@
+import * as Y from "yjs";
+import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import { WebrtcProvider } from "y-webrtc";
 import { useToast, SimpleGrid, Box } from "@chakra-ui/react";
 import SchemaEditor from "../components/schema-viewer";
 import { useRouter } from "next/dist/client/router";
@@ -28,9 +31,11 @@ import {
   isObjectType,
   isScalarType,
 } from "graphql";
+import { MonacoBinding } from "../lib/yMonaco";
 import { saveSchema } from "../lib/saveSchema";
 import { fetchSchema } from "../lib/getSchema";
 import { randomHash } from "../lib/randomHash";
+import { randomName } from "../lib/randomName";
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
@@ -154,12 +159,13 @@ export default function Home() {
 
     const originalTry = service.trySchema;
 
-    service.trySchema = (schema) => {
+    service.trySchema = async (schema) => {
       originalTry.call(service, schema);
-      service.getSchema().then((schema) => {
+      return service.getSchema().then((schema) => {
         if (schema) {
           setSchema(schema);
         }
+        return schema;
       });
     };
 
@@ -202,52 +208,112 @@ export default function Home() {
     latestSchemaId.current = schemaId;
   });
 
+  const editorInterface =
+    React.useRef<null | {
+      editor: monaco.editor.IStandaloneCodeEditor;
+      api: typeof monaco;
+    }>(null);
+
+  const connect = (
+    api: typeof monaco,
+    editor: monaco.editor.IStandaloneCodeEditor
+  ) => {
+    const ydocument = new Y.Doc();
+
+    const provider = new WebrtcProvider(
+      `session-${latestSchemaId.current}`,
+      ydocument,
+      // wrong typings, hence the any cast :)
+      {
+        signalingUrls: [process.env.WEBRTC_SIGNALING_SERVER!],
+      } as any
+    );
+
+    const getCollaboratorName = () => {
+      let name = window.localStorage.getItem("collaboratorName");
+      if (name == null) {
+        name = randomName();
+        window.localStorage.setItem("collaboratorName", name);
+      }
+    };
+    provider.awareness.setLocalStateField(
+      "collaboratorName",
+      getCollaboratorName()
+    );
+    new MonacoBinding(
+      api,
+      ydocument.getText("monaco"),
+      editor.getModel() as any,
+      new Set([editor]),
+      provider.awareness
+    );
+    console.log(editor.getValue());
+  };
+
   return (
     <Page>
       <SimpleGrid columns={2} spacing={4} p={8} background={"black"}>
         <Box border="1px solid #E535AB" borderRadius={6} overflow={"hidden"}>
           {initialEditorSchema ? (
-            <SchemaEditor
-              editorProps={{
-                height: "84vh",
-                theme: "vs-dark",
-                options: {
-                  automaticLayout: true,
-                  minimap: {
-                    enabled: false,
+            <React.Suspense fallback={null}>
+              <SchemaEditor
+                editorProps={{
+                  height: "84vh",
+                  theme: "vs-dark",
+                  options: {
+                    automaticLayout: true,
+                    minimap: {
+                      enabled: false,
+                    },
                   },
-                },
-                sharedLanguageService: languageService,
-              }}
-              schema={initialEditorSchema}
-              onUserSave={async (content) => {
-                let id = latestSchemaId.current;
-                if (id == null) {
-                  id = randomHash();
-                  setSchemaId(id);
+                  sharedLanguageService: languageService,
+                }}
+                schema={initialEditorSchema}
+                onUserSave={async (content) => {
+                  let id = latestSchemaId.current;
+                  if (id == null) {
+                    id = randomHash();
+                    setSchemaId(id);
 
-                  const newURL = `${URL_PREFIX}${id}`;
+                    const newURL = `${URL_PREFIX}${id}`;
 
-                  window.history.replaceState({}, "", newURL);
-                }
-                Promise.all([
-                  saveSchema(id, content),
-                  window.navigator.clipboard.writeText(
-                    location.href.toString()
-                  ),
-                ]).then(
-                  () => {
-                    toast({
-                      isClosable: true,
-                      position: "bottom",
-                      title: "Sharing link was copied to clipboard",
-                      status: "info",
+                    window.history.replaceState({}, "", newURL);
+                    latestSchemaId.current = id;
+                    connect(
+                      editorInterface.current!.api,
+                      editorInterface.current!.editor
+                    );
+                  }
+                  Promise.all([
+                    saveSchema(id, content),
+                    window.navigator.clipboard.writeText(
+                      location.href.toString()
+                    ),
+                  ]).then(
+                    () => {
+                      toast({
+                        isClosable: true,
+                        position: "bottom",
+                        title: "Sharing link was copied to clipboard",
+                        status: "info",
+                      });
+                    },
+                    (e: any) => alert(e)
+                  );
+                }}
+                onEditor={(editor, api) => {
+                  editorInterface.current = {
+                    editor,
+                    api,
+                  };
+                  if (latestSchemaId.current) {
+                    setTimeout(() => {
+                      connect(api, editor);
                     });
-                  },
-                  (e: any) => alert(e)
-                );
-              }}
-            />
+                  }
+                }}
+              />
+            </React.Suspense>
           ) : null}
         </Box>
         <Box
