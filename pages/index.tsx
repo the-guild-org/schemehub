@@ -141,8 +141,9 @@ const URL_PREFIX = "/#/code/";
 
 export default function Home() {
   const [schemaId, setSchemaId] = React.useState<null | string>(null);
-  const [initialEditorSchema, setInitialSchema] =
-    React.useState<string | null>(null);
+  const [initialEditorSchema, setInitialSchema] = React.useState<string | null>(
+    null
+  );
   const [schema, setSchema] = React.useState<GraphQLSchema | null>(null);
   const toast = useToast();
   const route = useRouter();
@@ -209,11 +210,10 @@ export default function Home() {
     latestSchemaId.current = schemaId;
   });
 
-  const editorInterface =
-    React.useRef<null | {
-      editor: monaco.editor.IStandaloneCodeEditor;
-      api: typeof monaco;
-    }>(null);
+  const editorInterface = React.useRef<null | {
+    editor: monaco.editor.IStandaloneCodeEditor;
+    api: typeof monaco;
+  }>(null);
 
   const connect = (
     api: typeof monaco,
@@ -223,11 +223,7 @@ export default function Home() {
 
     const provider = new WebrtcProvider(
       `session-${latestSchemaId.current}`,
-      ydocument,
-      // wrong typings, hence the any cast :)
-      {
-        signalingUrls: [process.env.WEBRTC_SIGNALING_SERVER!],
-      } as any
+      ydocument
     );
 
     const getCollaboratorName = () => {
