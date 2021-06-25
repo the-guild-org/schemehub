@@ -14,3 +14,35 @@ a {
 * {
   box-sizing: border-box;
 }
+
+.yRemoteSelection {
+  background-color: rgb(250, 129, 0, 0.5);
+}
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: orange solid 2px;
+  border-top: orange solid 2px;
+  border-bottom: orange solid 2px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: " ";
+  border: 3px solid orange;
+  border-radius: 4px;
+  left: -4px;
+  top: -5px;
+}
+
+.monaco-remote-cursor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4000;
+  width: fit-content;
+  white-space: nowrap;
+  font-size: 10px;
+  padding-left: 4px;
+  padding-right: 4px;
+  border-radius: 4px;
+}
