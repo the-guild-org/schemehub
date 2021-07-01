@@ -241,39 +241,45 @@ export default function Home() {
    * Debounced save of the schema
    */
   const [save] = React.useState(() =>
-    debounce((value: string) => {
-      const provider = providerRef.current;
-      if (provider == null || latestDataRef.current === null) {
-        return;
-      }
-
-      // if we are the client with the lowest id, we persist the changes.
-      const [lowestId] = Array.from(provider.awareness.getStates().keys()).sort(
-        (a, b) => a - b
-      );
-      if (
-        lowestId === provider.awareness.clientID &&
-        latestDataRef.current?.editHash != null
-      ) {
-        const { editHash, title } = latestDataRef.current;
-        let saveTask = saveTaskRef.current;
-        if (saveTask) {
-          saveTask.cancel();
+    debounce(
+      (value: string) => {
+        const provider = providerRef.current;
+        if (provider == null || latestDataRef.current === null) {
+          return;
         }
-        saveTaskRef.current = saveTask = schemaRest.update(editHash, {
-          title: title ?? "",
-          sdl: value,
-        });
-        saveTask.promise
-          .catch((err) => {
-            console.log(err);
-          })
-          .finally(() => {
-            setIsSavingCount((count) => count - 1);
+
+        // if we are the client with the lowest id, we persist the changes.
+        const [lowestId] = Array.from(
+          provider.awareness.getStates().keys()
+        ).sort((a, b) => a - b);
+        if (
+          lowestId === provider.awareness.clientID &&
+          latestDataRef.current?.editHash != null
+        ) {
+          const { editHash, title } = latestDataRef.current;
+          let saveTask = saveTaskRef.current;
+          if (saveTask) {
+            saveTask.cancel();
+          }
+          saveTaskRef.current = saveTask = schemaRest.update(editHash, {
+            title: title ?? "",
+            sdl: value,
           });
-        setIsSavingCount((count) => count + 1);
+          saveTask.promise
+            .catch((err) => {
+              console.log(err);
+            })
+            .finally(() => {
+              setIsSavingCount((count) => count - 1);
+            });
+          setIsSavingCount((count) => count + 1);
+        }
+      },
+      500,
+      {
+        maxWait: 10000,
       }
-    }, 500)
+    )
   );
 
   const [ref, bounds] = useMeasure();

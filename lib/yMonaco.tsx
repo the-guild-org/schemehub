@@ -172,8 +172,9 @@ export class MonacoBinding {
     styleSheet.type = "text/css";
     window.document.head.append(styleSheet);
 
+    let lastCacheCursorCache = ``;
     this._rerenderDecorations = () => {
-      const cursorInformation = new Map<string, string>();
+      const cursorInformation = new Map<number, string>();
       editors.forEach((editor) => {
         if (awareness && editor.getModel() === monacoModel) {
           this._collaboratorTooltips.get(editor)?.forEach((item) => {
@@ -237,10 +238,7 @@ export class MonacoBinding {
                     beforeContentClassName,
                   },
                 });
-                cursorInformation.set(
-                  String(clientID),
-                  state?.collaborator?.color
-                );
+                cursorInformation.set(clientID, state?.collaborator?.color);
                 const tooltipWidget = new RemoteCursorWidget(
                   String(clientID),
                   lineHeight,
@@ -261,23 +259,31 @@ export class MonacoBinding {
             }
           });
 
-          for (const child of styleSheet.childNodes) {
-            styleSheet.removeChild(child);
-          }
-          let cursorStyles = "";
+          const cacheKey = Array.from(cursorInformation.keys())
+            .sort((a, b) => a - b)
+            .join("_");
 
-          for (const [clientId, color] of cursorInformation) {
-            cursorStyles += `
+          if (cacheKey !== lastCacheCursorCache) {
+            for (const child of styleSheet.childNodes) {
+              styleSheet.removeChild(child);
+            }
+
+            let cursorStyles = "";
+
+            for (const [clientId, color] of cursorInformation) {
+              cursorStyles += `
 .yRemoteSelectionHead-${clientId}::after { border-color: ${color}; }
 .yRemoteSelectionHead-${clientId} { border-color: ${color}; }
 .yRemoteSelection-${clientId} { background-color: ${transparentize(
-              0.7,
-              color
-            )}; }
+                0.7,
+                color
+              )}; }
             `;
-          }
+            }
 
-          styleSheet.append(document.createTextNode(cursorStyles));
+            styleSheet.append(document.createTextNode(cursorStyles));
+            lastCacheCursorCache = cacheKey;
+          }
 
           this._decorations.set(
             editor,
