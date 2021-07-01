@@ -14,6 +14,14 @@ import {
   Spinner,
   Text,
   Center,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  PopoverCloseButton,
+  PopoverHeader,
+  PopoverBody,
+  PopoverArrow,
+  VStack,
 } from "@chakra-ui/react";
 import SchemaEditor from "../components/schema-viewer";
 import { useRouter } from "next/dist/client/router";
@@ -30,6 +38,7 @@ import debounce from "lodash/debounce";
 import { useBatchedUpdates } from "../lib/hooks/useBatchedUpdates";
 import { getFontColorForBackgroundColor } from "../lib/getFontColorForBackgroundColor";
 import useMeasure from "react-use-measure";
+import { CopyInput } from "../components/CopyInput";
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
@@ -333,7 +342,13 @@ export default function Home() {
           </Box>
         </Box>
         {Array.isArray(collaborators) ? (
-          <CollaboratorList collaborators={collaborators} />
+          <CollaboratorList
+            collaborators={collaborators}
+            shareUrl={{
+              edit: location.href.toString(),
+              view: "lel",
+            }}
+          />
         ) : null}
       </Flex>
       <Box height="3rem" backgroundColor="black" width="100%"></Box>
@@ -343,29 +358,78 @@ export default function Home() {
 
 const CollaboratorList = (props: {
   collaborators: Array<{ id: string; color: string; name: string }>;
+  shareUrl: {
+    edit: string;
+    view: string;
+  };
 }) => (
-  <Box width="250px">
+  <Box
+    width="250px"
+    display="flex"
+    flexDirection="column"
+    paddingLeft="1"
+    paddingRight="1"
+  >
     <Box padding="2">
       <Heading size="md" color="white">
         Collaborators
       </Heading>
     </Box>
-    {props.collaborators.map((collaborator) => (
-      <Box
-        backgroundColor={collaborator.color}
-        color={getFontColorForBackgroundColor(collaborator.color)}
-        key={collaborator.id}
-        paddingLeft="2"
-        paddingRight="2"
-        paddingTop="1"
-        paddingBottom="1"
-        borderRadius="5px"
-        marginBottom="1"
-        marginLeft="2"
-        marginRight="2"
-      >
-        {collaborator.name}
-      </Box>
-    ))}
+    <Box flex="1">
+      {props.collaborators.map((collaborator) => (
+        <Box
+          backgroundColor={collaborator.color}
+          color={getFontColorForBackgroundColor(collaborator.color)}
+          key={collaborator.id}
+          paddingLeft="2"
+          paddingRight="2"
+          paddingTop="1"
+          paddingBottom="1"
+          borderRadius="5px"
+          marginBottom="1"
+          marginLeft="2"
+          marginRight="2"
+        >
+          {collaborator.name}
+        </Box>
+      ))}
+    </Box>
+    <Box paddingTop="2" paddingBottom="4" color="white">
+      <Popover>
+        <PopoverTrigger>
+          <Button colorScheme="pink" width="100%">
+            Invite Collaborator
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent>
+          <PopoverArrow />
+          <PopoverCloseButton />
+          <PopoverHeader>
+            <Heading size="sm" color="white">
+              Invite Collaborators
+            </Heading>
+          </PopoverHeader>
+          <PopoverBody>
+            <VStack spacing="2">
+              <Text>
+                You can either invite a collaborator as an editor or viewer.
+              </Text>
+              <Box>
+                <Text mb="4px" fontWeight="bold">
+                  Write
+                </Text>
+                <CopyInput defaultValue={props.shareUrl.edit} readOnly />
+              </Box>
+              <Box>
+                <Text mb="4px" fontWeight="bold">
+                  Read
+                </Text>
+                <CopyInput defaultValue={props.shareUrl.view} readOnly />
+              </Box>
+            </VStack>
+          </PopoverBody>
+        </PopoverContent>
+      </Popover>
+    </Box>
   </Box>
 );
