@@ -13,6 +13,14 @@ export const schema: JSONSchema = {
       type: "string",
       description: "The instance's id.",
     },
+    editHash: {
+      type: "string",
+      description: "The hash required for editing/saving the schema",
+    },
+    title: {
+      type: "string",
+      description: "The title of the schema.",
+    },
     sdl: {
       type: "string",
       description: "The SDL that describes the schema.",
@@ -22,6 +30,7 @@ export const schema: JSONSchema = {
 
 export interface GraphQLSchema {
   _id: string;
+  title: string;
   sdl: string;
 }
 

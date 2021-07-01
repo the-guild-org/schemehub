@@ -20,6 +20,14 @@ yarn ts-node scripts/seed-thread
 
 Copy the printed `THREAD_ID` into `.env.local`.
 
+## Migrate database (ThreadDB)
+
+After the database got seeded you can run the migrations via. This is necessary every time the model changes.
+
+```bash
+yarn ts-node scripts/migrate
+```
+
 ## Getting Started
 
 First, run the development server:
