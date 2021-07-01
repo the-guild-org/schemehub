@@ -18,8 +18,6 @@ const Editor: React.FC<{
     latestOnUserSave.current = onUserSave;
   });
 
-  const monaco = useMonaco();
-
   return (
     <SchemaEditor
       schema={schema}

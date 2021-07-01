@@ -1,5 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { GraphQLSchema, runWithSchemaStore } from "../../../lib/schema-store";
+import * as yup from "yup";
+import {
+  GraphQLSchemaEntity,
+  runWithSchemaStore,
+} from "../../../lib/schema-store";
 
 export type Data =
   | {
@@ -8,49 +12,32 @@ export type Data =
       };
     }
   | {
-      data: GraphQLSchema;
+      data: Omit<GraphQLSchemaEntity, "editHash"> & { editHash: null | string };
     };
 
-export default runWithSchemaStore(
-  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
-    if (req.method === "GET") {
-      const { schemaId } = req.query;
-      if (typeof schemaId !== "string") {
-        res.status(400).json({
-          error: {
-            message: "Missing 'schemaId'.",
-          },
-        });
-        return;
-      }
-
-      let schema = await store.findById(schemaId).catch(() => null);
-
-      if (schema == null) {
-        res.status(404).json({
-          error: {
-            message: "Schema not found.",
-          },
-        });
-        return;
-      }
-
-      res.status(200).json({
-        data: schema,
-      });
-      return;
-    } else if (req.method !== "POST") {
-      res.status(404).json({
+export default async (req: NextApiRequest, res: NextApiResponse<Data>) => {
+  switch (req.method) {
+    case "GET":
+      return await get(req, res);
+    case "POST":
+      return await post(req, res);
+    case "PATCH":
+      return await patch(req, res);
+    default: {
+      res.status(400).json({
         error: {
-          message: "Invalid method.",
+          message: "Invalid method",
         },
       });
-      return;
     }
+  }
+};
 
-    const { schemaId } = req.query;
+const get = runWithSchemaStore(
+  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
+    const { schemaId: schemaIdOrEditHash } = req.query;
 
-    if (typeof schemaId !== "string") {
+    if (typeof schemaIdOrEditHash !== "string") {
       res.status(400).json({
         error: {
           message: "Missing 'schemaId'.",
@@ -59,35 +46,79 @@ export default runWithSchemaStore(
       return;
     }
 
-    let { sdl, title } = req.body;
-
-    if (typeof sdl !== "string") {
-      res.status(400).json({
-        error: {
-          message: "Missing 'sdl' property in body.",
+    if (schemaIdOrEditHash.endsWith(":edit")) {
+      const schemaEntity = await store.findByEditHash(
+        schemaIdOrEditHash.replace(":edit", "")
+      );
+      if (schemaEntity == null) {
+        res.status(404).json({
+          error: {
+            message: "Schema not found.",
+          },
+        });
+        return;
+      }
+      res.status(200).json({
+        data: {
+          ...schemaEntity,
+          editHash: `${schemaEntity.editHash}:edit`,
         },
       });
       return;
     }
-    if (typeof title !== "string") {
-      res.status(400).json({
+
+    const schemaEntity = await store.findById(schemaIdOrEditHash);
+
+    if (schemaEntity == null) {
+      res.status(404).json({
         error: {
-          message: "Missing 'title' property in body.",
+          message: "Schema not found.",
         },
       });
       return;
     }
 
-    let schema = await store.findById(schemaId).catch(() => null);
+    // when u query by id you don't get edit access
+    res.status(200).json({
+      data: {
+        ...schemaEntity,
+        editHash: null,
+      },
+    });
 
-    if (schema == null) {
-      await store.create(schemaId, title, sdl);
-    } else {
-      await store.save(schemaId, title, sdl);
+    return;
+  }
+);
+
+const PostInput = yup.object().shape({
+  title: yup.string().required(),
+  sdl: yup.string().required(),
+  editHash: yup.string().required(),
+});
+
+const SchemaId = yup.string().required();
+
+type PostInputType = yup.InferType<typeof PostInput>;
+
+const post = runWithSchemaStore(
+  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
+    let data: PostInputType;
+    let schemaId: string;
+    try {
+      data = await PostInput.validate(req.body);
+      schemaId = await SchemaId.validate(req.query["schemaId"]);
+    } catch (err) {
+      res.status(400).json({
+        error: {
+          message: "Invalid input.",
+        },
+      });
+      return;
     }
+    await store.create(schemaId, data.title, data.sdl, data.editHash);
+    const schemaEntity = await store.findById(schemaId);
 
-    schema = await store.findById(schemaId);
-    if (schema == null) {
+    if (schemaEntity == null) {
       res.status(500).json({
         error: {
           message: "Unexpected error.",
@@ -97,7 +128,69 @@ export default runWithSchemaStore(
     }
 
     res.status(200).json({
-      data: schema,
+      data: {
+        ...schemaEntity,
+        editHash: `${schemaEntity.editHash}:edit`,
+      },
+    });
+  }
+);
+
+const UpdateInput = yup.object().shape({
+  title: yup.string(),
+  sdl: yup.string(),
+});
+
+type UpdateInputType = yup.InferType<typeof UpdateInput>;
+
+const patch = runWithSchemaStore(
+  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
+    let data: UpdateInputType;
+    let schemaId: string;
+    try {
+      data = await UpdateInput.validate(req.body);
+      schemaId = await SchemaId.validate(req.query["schemaId"]);
+    } catch (err) {
+      res.status(400).json({
+        error: {
+          message: "Invalid input.",
+        },
+      });
+      return;
+    }
+
+    if (schemaId.endsWith(":edit") === false) {
+      res.status(404).json({
+        error: {
+          message: "Not found.",
+        },
+      });
+      return;
+    }
+
+    const editHash = schemaId.replace(":edit", "");
+
+    const schemaEntity = await store.findByEditHash(editHash);
+    if (schemaEntity == null) {
+      res.status(404).json({
+        error: {
+          message: "Not found.",
+        },
+      });
+      return;
+    }
+
+    await store.save(
+      schemaEntity._id,
+      data.title ?? schemaEntity.title,
+      data.sdl ?? schemaEntity.sdl
+    );
+
+    res.status(200).json({
+      data: {
+        ...schemaEntity,
+        editHash: `${schemaEntity.editHash}:edit`,
+      },
     });
   }
 );

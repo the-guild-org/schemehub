@@ -15,7 +15,6 @@ function hslToHex(h: number, s: number, l: number) {
 
 export function generateRandomHslColor() {
   const h = getRandomInt(1, 360);
-  const s = getRandomInt(0, 100);
-  const l = getRandomInt(0, 100);
-  return hslToHex(h, s, l);
+
+  return hslToHex(h, 100, 75);
 }

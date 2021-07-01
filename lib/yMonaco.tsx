@@ -4,6 +4,7 @@ import { createMutex, mutex } from "lib0/mutex";
 import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import type { Awareness } from "y-protocols/awareness";
 import { getFontColorForBackgroundColor } from "./getFontColorForBackgroundColor";
+import { transparentize } from "polished";
 
 class RelativeSelection {
   start: Y.RelativePosition;
@@ -91,6 +92,8 @@ class RemoteCursorWidget implements monaco.editor.IContentWidget {
     tooltip.style.background = color;
     tooltip.style.color = getFontColorForBackgroundColor(color);
     tooltip.style.height = `${lineHeight}px`;
+    // uncomment this to show names next to cursor
+    tooltip.style.display = "none";
     tooltip.innerHTML = name;
     this.position = position;
   }
@@ -165,7 +168,12 @@ export class MonacoBinding {
     };
     this.doc.on("beforeAllTransactions", this._beforeTransaction);
     this._decorations = new Map();
+    const styleSheet = document.createElement("style");
+    styleSheet.type = "text/css";
+    window.document.head.append(styleSheet);
+
     this._rerenderDecorations = () => {
+      const cursorInformation = new Map<string, string>();
       editors.forEach((editor) => {
         if (awareness && editor.getModel() === monacoModel) {
           this._collaboratorTooltips.get(editor)?.forEach((item) => {
@@ -180,6 +188,7 @@ export class MonacoBinding {
           const currentDecorations = this._decorations.get(editor) || [];
           const newDecorations: Array<monaco.editor.IModelDeltaDecoration> = [];
           const tooltips: Array<monaco.editor.IContentWidget> = [];
+
           awareness.getStates().forEach((state, clientID) => {
             if (
               clientID !== this.doc.clientID &&
@@ -195,6 +204,7 @@ export class MonacoBinding {
                 state.selection.head,
                 this.doc
               );
+              let ruleCounter = 0;
               if (
                 anchorAbs !== null &&
                 headAbs !== null &&
@@ -205,13 +215,13 @@ export class MonacoBinding {
                 if (anchorAbs.index < headAbs.index) {
                   start = monacoModel.getPositionAt(anchorAbs.index);
                   end = monacoModel.getPositionAt(headAbs.index);
-                  afterContentClassName = "yRemoteSelectionHead";
+                  afterContentClassName = `yRemoteSelectionHead yRemoteSelectionHead-${clientID}`;
                   beforeContentClassName = null;
                 } else {
                   start = monacoModel.getPositionAt(headAbs.index);
                   end = monacoModel.getPositionAt(anchorAbs.index);
                   afterContentClassName = null;
-                  beforeContentClassName = "yRemoteSelectionHead";
+                  beforeContentClassName = `yRemoteSelectionHead yRemoteSelectionHead-${clientID}`;
                 }
                 const range = new this.api.Range(
                   start.lineNumber,
@@ -222,11 +232,15 @@ export class MonacoBinding {
                 newDecorations.push({
                   range,
                   options: {
-                    className: "yRemoteSelection",
+                    className: `yRemoteSelection yRemoteSelection-${clientID}`,
                     afterContentClassName,
                     beforeContentClassName,
                   },
                 });
+                cursorInformation.set(
+                  String(clientID),
+                  state?.collaborator?.color
+                );
                 const tooltipWidget = new RemoteCursorWidget(
                   String(clientID),
                   lineHeight,
@@ -246,6 +260,25 @@ export class MonacoBinding {
               }
             }
           });
+
+          for (const child of styleSheet.childNodes) {
+            styleSheet.removeChild(child);
+          }
+          let cursorStyles = "";
+
+          for (const [clientId, color] of cursorInformation) {
+            cursorStyles += `
+.yRemoteSelectionHead-${clientId}::after { border-color: ${color}; }
+.yRemoteSelectionHead-${clientId} { border-color: ${color}; }
+.yRemoteSelection-${clientId} { background-color: ${transparentize(
+              0.7,
+              color
+            )}; }
+            `;
+          }
+
+          styleSheet.append(document.createTextNode(cursorStyles));
+
           this._decorations.set(
             editor,
             editor.deltaDecorations(currentDecorations, newDecorations)
@@ -359,14 +392,17 @@ export class MonacoBinding {
       monacoModel.applyEdits([
         {
           range: {
-            startColumn: 0,
+            startColumn: 1,
             startLineNumber: 0,
             endLineNumber: 0,
-            endColumn: 0,
+            endColumn: 1,
           },
           text: value,
         },
       ]);
+      editors.forEach((editor) => {
+        editor.setPosition({ lineNumber: 0, column: 0 });
+      });
     }, 1000);
 
     this.awareness.once("change", () => {

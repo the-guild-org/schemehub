@@ -1,5 +1,5 @@
 import { JSONSchema, ThreadID } from "@textile/threaddb";
-import { Client } from "@textile/threads-client";
+import { Client, ComparisonJSON } from "@textile/threads-client";
 import once from "lodash/once";
 
 export const collectionTitle = "GraphQLSchema";
@@ -15,7 +15,7 @@ export const schema: JSONSchema = {
     },
     editHash: {
       type: "string",
-      description: "The hash required for editing/saving the schema",
+      description: "The hash required for editing the schema",
     },
     title: {
       type: "string",
@@ -28,10 +28,11 @@ export const schema: JSONSchema = {
   },
 };
 
-export interface GraphQLSchema {
+export interface GraphQLSchemaEntity {
   _id: string;
   title: string;
   sdl: string;
+  editHash: string;
 }
 
 const initClient = once(async () => {
@@ -44,8 +45,14 @@ const initClient = once(async () => {
 });
 
 type SchemaStore = {
-  findById(id: string): Promise<undefined | null | GraphQLSchema>;
-  create(id: string, title: string, sdl: string): Promise<Array<string>>;
+  findById(id: string): Promise<null | GraphQLSchemaEntity>;
+  findByEditHash(editHash: string): Promise<null | GraphQLSchemaEntity>;
+  create(
+    id: string,
+    title: string,
+    sdl: string,
+    editHash: string
+  ): Promise<Array<string>>;
   save(id: string, title: string, sdl: string): Promise<void>;
 };
 
@@ -56,9 +63,28 @@ export const runWithSchemaStore =
   async (...args: TArgs): Promise<TReturn> => {
     const [client, threadId] = await initClient();
     const store: SchemaStore = {
-      findById: (id) => client.findByID(threadId, collectionTitle, id),
-      create: (_id, title, sdl) =>
-        client.create(threadId, collectionTitle, [{ _id, title, sdl }]),
+      findById: (id) =>
+        client
+          .findByID<GraphQLSchemaEntity | null>(threadId, collectionTitle, id)
+          .catch(() => null),
+      findByEditHash: async (editHash) => {
+        const records = await client.find<GraphQLSchemaEntity>(
+          threadId,
+          collectionTitle,
+          {
+            // @ts-expect-error: invalid typings :)
+            editHash: {
+              $eq: editHash,
+            },
+          }
+        );
+        // for some reason schemaEntity does not include editHash when it used for querying lol
+        return records[0] ? { ...records[0], editHash } : null;
+      },
+      create: (_id, title, sdl, editHash) =>
+        client.create(threadId, collectionTitle, [
+          { _id, title, sdl, editHash },
+        ]),
       save: (_id, title, sdl) =>
         client.save(threadId, collectionTitle, [{ _id, title, sdl }]),
     };

@@ -23,6 +23,7 @@ import {
   PopoverArrow,
   VStack,
   IconButton,
+  Badge,
 } from "@chakra-ui/react";
 import { EditIcon } from "@chakra-ui/icons";
 import SchemaEditor from "../components/schema-viewer";
@@ -31,8 +32,7 @@ import React from "react";
 import { Page } from "../components/common";
 import { EnrichedLanguageService } from "@theguild/editor";
 import { MonacoBinding } from "../lib/yMonaco";
-import { saveSchema } from "../lib/saveSchema";
-import { fetchSchema } from "../lib/getSchema";
+import * as schemaRest from "../lib/schemaRest";
 import { randomHash } from "../lib/randomHash";
 import { randomName } from "../lib/randomName";
 import { generateRandomHslColor } from "../lib/generateHSLAColors";
@@ -41,6 +41,7 @@ import { useBatchedUpdates } from "../lib/hooks/useBatchedUpdates";
 import { getFontColorForBackgroundColor } from "../lib/getFontColorForBackgroundColor";
 import useMeasure from "react-use-measure";
 import { CopyInput } from "../components/CopyInput";
+import { createVConsole } from "lib0/logging";
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
@@ -52,6 +53,7 @@ const URL_PREFIX = "/#/code/";
 
 export default function Home() {
   const [title, setTitle] = React.useState("");
+  const [editHash, setEditHash] = React.useState<null | string>(null);
   const [schemaId, setSchemaId] = React.useState<null | string>(null);
   const [initialEditorSchema, setInitialSchema] = React.useState<string | null>(
     null
@@ -77,20 +79,17 @@ export default function Home() {
 
   React.useEffect(() => {
     if (route.asPath && route.asPath.startsWith(URL_PREFIX)) {
-      const schemaId = route.asPath.replace(URL_PREFIX, "");
-      const value = schemaId;
-      if (value == null) {
-        return;
-      }
-      fetchSchema(value).then((res) => {
+      const schemaIdOrEditHash = route.asPath.replace(URL_PREFIX, "");
+      schemaRest.get(schemaIdOrEditHash).then((res) => {
         if ("error" in res) {
-          console.error(res.error);
+          alert(res.error);
           return;
         }
         batchUpdates(() => {
+          setSchemaId(res.data._id);
           setTitle(res.data.title);
-          setSchemaId(schemaId);
           setInitialSchema(res.data.sdl);
+          setEditHash(res.data.editHash);
         });
       });
     } else {
@@ -180,22 +179,29 @@ export default function Home() {
 
   const saveAndStartCollaborationSession = () => {
     const id = randomHash();
-    setSchemaId(id);
-
-    const newURL = `${URL_PREFIX}${id}`;
-
-    latestSchemaId.current = id;
 
     Promise.all([
-      saveSchema(
-        id,
-        title.trim(),
-        editorInterface.current?.editor.getModel()?.getValue() ?? ""
-      ),
+      schemaRest.create(id, {
+        title: title.trim(),
+        sdl: editorInterface.current?.editor.getModel()?.getValue() ?? "",
+        editHash: randomHash(),
+      }),
       window.navigator.clipboard.writeText(location.href.toString()),
     ]).then(
-      () => {
+      ([result]) => {
+        if ("error" in result) {
+          alert(result.error.message);
+          return;
+        }
+        const newURL = `${URL_PREFIX}${result.data.editHash}`;
+
         window.history.replaceState({}, "", newURL);
+        batchUpdates(() => {
+          console.log("OIOIOIO", result.data);
+          setSchemaId(result.data._id);
+          setEditHash(result.data.editHash);
+        });
+        latestSchemaId.current = id;
         connect(editorInterface.current!.api, editorInterface.current!.editor);
 
         toast({
@@ -209,20 +215,22 @@ export default function Home() {
     );
   };
 
-  const saveTaskRef = React.useRef<ReturnType<typeof saveSchema> | null>(null);
+  const saveTaskRef = React.useRef<ReturnType<
+    typeof schemaRest["update"]
+  > | null>(null);
 
   const latestDataRef = React.useRef<{
-    schemaId: string;
-    title: string;
+    schemaId: string | null;
+    title: string | null;
+    editHash: string | null;
   } | null>(null);
 
   React.useEffect(() => {
-    latestDataRef.current = schemaId
-      ? {
-          schemaId,
-          title,
-        }
-      : null;
+    latestDataRef.current = {
+      schemaId,
+      title,
+      editHash,
+    };
   });
 
   const [isSavingCount, setIsSavingCount] = React.useState(0);
@@ -238,18 +246,24 @@ export default function Home() {
       if (provider == null || latestDataRef.current === null) {
         return;
       }
-      const { schemaId, title } = latestDataRef.current;
 
       // if we are the client with the lowest id, we persist the changes.
       const [lowestId] = Array.from(provider.awareness.getStates().keys()).sort(
         (a, b) => a - b
       );
-      if (lowestId === provider.awareness.clientID) {
+      if (
+        lowestId === provider.awareness.clientID &&
+        latestDataRef.current?.editHash != null
+      ) {
+        const { editHash, title } = latestDataRef.current;
         let saveTask = saveTaskRef.current;
         if (saveTask) {
           saveTask.cancel();
         }
-        saveTaskRef.current = saveTask = saveSchema(schemaId, title, value);
+        saveTaskRef.current = saveTask = schemaRest.update(editHash, {
+          title: title ?? "",
+          sdl: value,
+        });
         saveTask.promise
           .catch((err) => {
             console.log(err);
@@ -313,6 +327,16 @@ export default function Home() {
                 <Spinner size="sm" />
               </Center>
             ) : null}
+            {editHash == null && schemaId != null ? (
+              <Badge
+                ml="1"
+                fontSize="0.8em"
+                colorScheme="yellow"
+                marginLeft="auto"
+              >
+                READ-ONLY MODE
+              </Badge>
+            ) : null}
           </Flex>
           <Box ref={ref} flex="1">
             {initialEditorSchema ? (
@@ -326,13 +350,16 @@ export default function Home() {
                       minimap: {
                         enabled: false,
                       },
+                      readOnly: editHash == null && schemaId != null,
                     },
                     sharedLanguageService: languageService,
-                    onChange: (value) => {
-                      if (value) {
-                        save(value);
-                      }
-                    },
+                    onChange: editHash
+                      ? (value) => {
+                          if (value) {
+                            save(value);
+                          }
+                        }
+                      : undefined,
                   }}
                   schema={initialEditorSchema}
                   onEditor={(editor, api) => {
@@ -362,12 +389,17 @@ export default function Home() {
                   color: viewer.color,
                 }
               );
+              window.localStorage.setItem("collaboratorName", name);
             }}
             viewer={viewer}
-            shareUrl={{
-              edit: location.href.toString(),
-              view: "lel",
-            }}
+            shareUrl={
+              editHash != null && schemaId != null
+                ? {
+                    edit: buildShareUrl(editHash),
+                    view: buildShareUrl(schemaId),
+                  }
+                : null
+            }
           />
         ) : null}
       </Flex>
@@ -376,13 +408,20 @@ export default function Home() {
   );
 }
 
+const buildShareUrl = (idOrEditHash: string) =>
+  window.location.protocol +
+  "//" +
+  window.location.hostname +
+  (window.location.port ? `:${window.location.port}` : "") +
+  `${URL_PREFIX}${idOrEditHash}`;
+
 const CollaboratorList = (props: {
   viewer: CollaboratorEntity;
   collaborators: Array<{ id: string; color: string; name: string }>;
   shareUrl: {
     edit: string;
     view: string;
-  };
+  } | null;
   changeName: (value: string) => void;
 }) => (
   <Box
@@ -434,43 +473,45 @@ const CollaboratorList = (props: {
         <CollaboratorBox key={collaborator.id} collaborator={collaborator} />
       ))}
     </Box>
-    <Box paddingTop="2" paddingBottom="4" color="white">
-      <Popover>
-        <PopoverTrigger>
-          <Button colorScheme="pink" width="100%">
-            Invite Collaborator
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent>
-          <PopoverArrow />
-          <PopoverCloseButton />
-          <PopoverHeader>
-            <Heading size="sm" color="white">
-              Invite Collaborators
-            </Heading>
-          </PopoverHeader>
-          <PopoverBody>
-            <VStack spacing="2">
-              <Text>
-                You can either invite a collaborator as an editor or viewer.
-              </Text>
-              <Box>
-                <Text mb="4px" fontWeight="bold">
-                  Write
+    {props.shareUrl != null ? (
+      <Box padding="2" paddingBottom="4" color="white">
+        <Popover>
+          <PopoverTrigger>
+            <Button colorScheme="pink" width="100%">
+              Invite Collaborator
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent>
+            <PopoverArrow />
+            <PopoverCloseButton />
+            <PopoverHeader>
+              <Heading size="sm" color="white">
+                Invite Collaborators
+              </Heading>
+            </PopoverHeader>
+            <PopoverBody>
+              <VStack spacing="2">
+                <Text>
+                  You can either invite a collaborator as an editor or viewer.
                 </Text>
-                <CopyInput defaultValue={props.shareUrl.edit} readOnly />
-              </Box>
-              <Box>
-                <Text mb="4px" fontWeight="bold">
-                  Read
-                </Text>
-                <CopyInput defaultValue={props.shareUrl.view} readOnly />
-              </Box>
-            </VStack>
-          </PopoverBody>
-        </PopoverContent>
-      </Popover>
-    </Box>
+                <Box>
+                  <Text mb="4px" fontWeight="bold">
+                    Write
+                  </Text>
+                  <CopyInput defaultValue={props.shareUrl.edit} readOnly />
+                </Box>
+                <Box>
+                  <Text mb="4px" fontWeight="bold">
+                    Read
+                  </Text>
+                  <CopyInput defaultValue={props.shareUrl.view} readOnly />
+                </Box>
+              </VStack>
+            </PopoverBody>
+          </PopoverContent>
+        </Popover>
+      </Box>
+    ) : null}
   </Box>
 );
 

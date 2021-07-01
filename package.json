@@ -24,6 +24,7 @@
     "lodash": "4.17.21",
     "monaco-editor": "0.24.0",
     "next": "10.2.3",
+    "polished": "4.1.3",
     "react": "17.0.2",
     "react-dom": "17.0.2",
     "react-use-measure": "2.0.4",
@@ -32,7 +33,8 @@
     "twin.macro": "2.4.1",
     "y-protocols": "1.0.5",
     "y-webrtc": "10.2.0",
-    "yjs": "13.5.10"
+    "yjs": "13.5.10",
+    "yup": "0.32.9"
   },
   "babelMacros": {
     "twin": {
