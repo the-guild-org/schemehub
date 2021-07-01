@@ -3,6 +3,7 @@ import * as error from "lib0/error";
 import { createMutex, mutex } from "lib0/mutex";
 import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import type { Awareness } from "y-protocols/awareness";
+import { getFontColorForBackgroundColor } from "./getFontColorForBackgroundColor";
 
 class RelativeSelection {
   start: Y.RelativePosition;
@@ -71,9 +72,6 @@ const createMonacoSelectionFromRelativeSelection = (
   return null;
 };
 
-const getColorByBgColor = (bgColor: string) =>
-  parseInt(bgColor.replace("#", ""), 16) > 0xffffff / 2 ? "#000" : "#fff";
-
 class RemoteCursorWidget implements monaco.editor.IContentWidget {
   id: string;
   tooltip: HTMLElement;
@@ -91,7 +89,7 @@ class RemoteCursorWidget implements monaco.editor.IContentWidget {
     const tooltip = (this.tooltip = document.createElement("div"));
     tooltip.className = "monaco-remote-cursor";
     tooltip.style.background = color;
-    tooltip.style.color = getColorByBgColor(color);
+    tooltip.style.color = getFontColorForBackgroundColor(color);
     tooltip.style.height = `${lineHeight}px`;
     tooltip.innerHTML = name;
     this.position = position;
@@ -356,7 +354,7 @@ export class MonacoBinding {
     });
     this.awareness = awareness;
 
-    // We wait 100ms, if no other user is connected, our initial value will be the source of truth
+    // We wait 1s, if no other user is connected, our initial value will be the source of truth
     let timeout = setTimeout(() => {
       monacoModel.applyEdits([
         {
@@ -369,9 +367,9 @@ export class MonacoBinding {
           text: value,
         },
       ]);
-    }, 100);
+    }, 1000);
 
-    this.awareness.on("change", () => {
+    this.awareness.once("change", () => {
       clearTimeout(timeout);
     });
   }

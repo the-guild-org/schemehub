@@ -59,7 +59,7 @@ export default runWithSchemaStore(
       return;
     }
 
-    const { sdl } = req.body;
+    let { sdl, title } = req.body;
 
     if (typeof sdl !== "string") {
       res.status(400).json({
@@ -69,13 +69,21 @@ export default runWithSchemaStore(
       });
       return;
     }
+    if (typeof title !== "string") {
+      res.status(400).json({
+        error: {
+          message: "Missing 'title' property in body.",
+        },
+      });
+      return;
+    }
 
     let schema = await store.findById(schemaId).catch(() => null);
 
     if (schema == null) {
-      await store.create(schemaId, sdl);
+      await store.create(schemaId, title, sdl);
     } else {
-      await store.save(schemaId, sdl);
+      await store.save(schemaId, title, sdl);
     }
 
     schema = await store.findById(schemaId);

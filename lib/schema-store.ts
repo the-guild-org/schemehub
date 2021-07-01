@@ -45,8 +45,8 @@ const initClient = once(async () => {
 
 type SchemaStore = {
   findById(id: string): Promise<undefined | null | GraphQLSchema>;
-  create(id: string, sdl: string): Promise<Array<string>>;
-  save(id: string, sdl: string): Promise<void>;
+  create(id: string, title: string, sdl: string): Promise<Array<string>>;
+  save(id: string, title: string, sdl: string): Promise<void>;
 };
 
 export const runWithSchemaStore =
@@ -57,10 +57,10 @@ export const runWithSchemaStore =
     const [client, threadId] = await initClient();
     const store: SchemaStore = {
       findById: (id) => client.findByID(threadId, collectionTitle, id),
-      create: (_id, sdl) =>
-        client.create(threadId, collectionTitle, [{ _id, sdl }]),
-      save: (_id, sdl) =>
-        client.save(threadId, collectionTitle, [{ _id, sdl }]),
+      create: (_id, title, sdl) =>
+        client.create(threadId, collectionTitle, [{ _id, title, sdl }]),
+      save: (_id, title, sdl) =>
+        client.save(threadId, collectionTitle, [{ _id, title, sdl }]),
     };
     return await handler(store, ...args);
   };
