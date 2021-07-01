@@ -22,7 +22,9 @@ import {
   PopoverBody,
   PopoverArrow,
   VStack,
+  IconButton,
 } from "@chakra-ui/react";
+import { EditIcon } from "@chakra-ui/icons";
 import SchemaEditor from "../components/schema-viewer";
 import { useRouter } from "next/dist/client/router";
 import React from "react";
@@ -108,11 +110,9 @@ export default function Home() {
 
   const providerRef = React.useRef<null | WebrtcProvider>(null);
 
-  const [collaborators, setCollaborators] = React.useState<null | Array<{
-    id: string;
-    name: string;
-    color: string;
-  }>>(null);
+  const [viewer, setViewer] = React.useState<null | CollaboratorEntity>(null);
+  const [collaborators, setCollaborators] =
+    React.useState<null | Array<CollaboratorEntity>>(null);
 
   const connect = (
     api: typeof monaco,
@@ -146,11 +146,8 @@ export default function Home() {
     );
 
     provider.awareness.on("change", () => {
-      const collaborators: Array<{
-        id: string;
-        name: string;
-        color: string;
-      }> = [];
+      const collaborators: Array<CollaboratorEntity> = [];
+      let viewer: CollaboratorEntity | null = null;
       for (const [id, state] of provider.awareness.getStates()) {
         if (
           typeof state?.collaborator?.name !== "string" ||
@@ -158,13 +155,26 @@ export default function Home() {
         ) {
           continue;
         }
+        const collaborator: CollaboratorEntity = {
+          id: String(id),
+          name: state.collaborator.name,
+          color: state.collaborator.color,
+        };
+        if (id === provider.awareness.clientID) {
+          viewer = collaborator;
+          continue;
+        }
+
         collaborators.push({
           id: String(id),
           name: state.collaborator.name,
           color: state.collaborator.color,
         });
       }
-      setCollaborators(collaborators);
+      batchUpdates(() => {
+        setCollaborators(collaborators);
+        setViewer(viewer);
+      });
     });
   };
 
@@ -341,9 +351,19 @@ export default function Home() {
             ) : null}
           </Box>
         </Box>
-        {Array.isArray(collaborators) ? (
+        {Array.isArray(collaborators) && viewer != null ? (
           <CollaboratorList
             collaborators={collaborators}
+            changeName={(name: string) => {
+              providerRef.current?.awareness.setLocalStateField(
+                "collaborator",
+                {
+                  name: name,
+                  color: viewer.color,
+                }
+              );
+            }}
+            viewer={viewer}
             shareUrl={{
               edit: location.href.toString(),
               view: "lel",
@@ -357,11 +377,13 @@ export default function Home() {
 }
 
 const CollaboratorList = (props: {
+  viewer: CollaboratorEntity;
   collaborators: Array<{ id: string; color: string; name: string }>;
   shareUrl: {
     edit: string;
     view: string;
   };
+  changeName: (value: string) => void;
 }) => (
   <Box
     width="250px"
@@ -376,22 +398,40 @@ const CollaboratorList = (props: {
       </Heading>
     </Box>
     <Box flex="1">
+      <CollaboratorBox
+        collaborator={props.viewer}
+        additionalContent={
+          <Popover>
+            <PopoverTrigger>
+              <IconButton
+                marginLeft="auto"
+                aria-label="Change Name"
+                variant="ghost"
+                size="sm"
+                color={getFontColorForBackgroundColor(props.viewer.color)}
+                icon={<EditIcon />}
+              />
+            </PopoverTrigger>
+            <PopoverContent>
+              <PopoverArrow />
+              <PopoverCloseButton />
+              <PopoverHeader>
+                <Heading size="sm" color="white">
+                  Edit Name
+                </Heading>
+              </PopoverHeader>
+              <PopoverBody>
+                <ChangeNameForm
+                  name={props.viewer.name}
+                  changeName={props.changeName}
+                />
+              </PopoverBody>
+            </PopoverContent>
+          </Popover>
+        }
+      />
       {props.collaborators.map((collaborator) => (
-        <Box
-          backgroundColor={collaborator.color}
-          color={getFontColorForBackgroundColor(collaborator.color)}
-          key={collaborator.id}
-          paddingLeft="2"
-          paddingRight="2"
-          paddingTop="1"
-          paddingBottom="1"
-          borderRadius="5px"
-          marginBottom="1"
-          marginLeft="2"
-          marginRight="2"
-        >
-          {collaborator.name}
-        </Box>
+        <CollaboratorBox key={collaborator.id} collaborator={collaborator} />
       ))}
     </Box>
     <Box paddingTop="2" paddingBottom="4" color="white">
@@ -433,3 +473,59 @@ const CollaboratorList = (props: {
     </Box>
   </Box>
 );
+
+const CollaboratorBox = (props: {
+  collaborator: CollaboratorEntity;
+  additionalContent?: React.ReactElement;
+}) => {
+  return (
+    <Box
+      backgroundColor={props.collaborator.color}
+      color={getFontColorForBackgroundColor(props.collaborator.color)}
+      key={props.collaborator.id}
+      paddingLeft="2"
+      paddingRight="2"
+      paddingTop="1"
+      paddingBottom="1"
+      borderRadius="5px"
+      marginBottom="1"
+      marginLeft="2"
+      marginRight="2"
+      display="flex"
+      alignItems="center"
+    >
+      {props.collaborator.name}
+      {props.additionalContent}
+    </Box>
+  );
+};
+
+type CollaboratorEntity = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+const ChangeNameForm = (props: {
+  name: string;
+  changeName: (name: string) => void;
+}) => {
+  return (
+    <VStack
+      as="form"
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        const newName = (ev.target as any).nameInput.value.trim();
+        if (newName === "") {
+          return;
+        }
+        props.changeName(newName);
+      }}
+    >
+      <Input color="white" defaultValue={props.name} id="nameInput" />
+      <Button type="submit" size="sm" colorScheme="pink" width="100%">
+        Save
+      </Button>
+    </VStack>
+  );
+};
