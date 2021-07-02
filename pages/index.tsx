@@ -41,7 +41,6 @@ import { useBatchedUpdates } from "../lib/hooks/useBatchedUpdates";
 import { getFontColorForBackgroundColor } from "../lib/getFontColorForBackgroundColor";
 import useMeasure from "react-use-measure";
 import { CopyInput } from "../components/CopyInput";
-import { createVConsole } from "lib0/logging";
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
