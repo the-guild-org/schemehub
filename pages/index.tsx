@@ -276,6 +276,7 @@ export default function Home() {
       },
       500,
       {
+        /* Make sure we save at least every 10 seconds in a super busy session with lots of edits. */
         maxWait: 10000,
       }
     )
