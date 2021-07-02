@@ -97,9 +97,18 @@ export default function Home() {
     }
   }, []);
 
-  const latestSchemaId = React.useRef(schemaId);
+  const latestDataRef = React.useRef<{
+    schemaId: string | null;
+    title: string | null;
+    editHash: string | null;
+  } | null>(null);
+
   React.useEffect(() => {
-    latestSchemaId.current = schemaId;
+    latestDataRef.current = {
+      schemaId,
+      title,
+      editHash,
+    };
   });
 
   const editorInterface = React.useRef<null | {
@@ -115,12 +124,13 @@ export default function Home() {
 
   const connect = (
     api: typeof monaco,
-    editor: monaco.editor.IStandaloneCodeEditor
+    editor: monaco.editor.IStandaloneCodeEditor,
+    editHash: string
   ) => {
     const ydocument = new Y.Doc();
 
     const provider = (providerRef.current = new WebrtcProvider(
-      `session-${latestSchemaId.current}`,
+      `session-${editHash}`,
       ydocument
     ));
 
@@ -197,12 +207,16 @@ export default function Home() {
 
         window.history.replaceState({}, "", newURL);
         batchUpdates(() => {
-          console.log("OIOIOIO", result.data);
           setSchemaId(result.data._id);
           setEditHash(result.data.editHash);
         });
-        latestSchemaId.current = id;
-        connect(editorInterface.current!.api, editorInterface.current!.editor);
+        if (result.data.editHash) {
+          connect(
+            editorInterface.current!.api,
+            editorInterface.current!.editor,
+            result.data.editHash
+          );
+        }
 
         toast({
           isClosable: true,
@@ -218,20 +232,6 @@ export default function Home() {
   const saveTaskRef = React.useRef<ReturnType<
     typeof schemaRest["update"]
   > | null>(null);
-
-  const latestDataRef = React.useRef<{
-    schemaId: string | null;
-    title: string | null;
-    editHash: string | null;
-  } | null>(null);
-
-  React.useEffect(() => {
-    latestDataRef.current = {
-      schemaId,
-      title,
-      editHash,
-    };
-  });
 
   const [isSavingCount, setIsSavingCount] = React.useState(0);
 
@@ -373,10 +373,8 @@ export default function Home() {
                       editor,
                       api,
                     };
-                    if (latestSchemaId.current) {
-                      setTimeout(() => {
-                        connect(api, editor);
-                      });
+                    if (editHash != null) {
+                      connect(api, editor, editHash);
                     }
                   }}
                 />
