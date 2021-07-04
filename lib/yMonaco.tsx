@@ -6,6 +6,10 @@ import type { Awareness } from "y-protocols/awareness";
 import { getFontColorForBackgroundColor } from "./getFontColorForBackgroundColor";
 import { transparentize } from "polished";
 
+const isWindows =
+  typeof window !== "undefined" &&
+  window.navigator.platform.toUpperCase().indexOf("WIN") > -1;
+
 class RelativeSelection {
   start: Y.RelativePosition;
   end: Y.RelativePosition;
@@ -166,6 +170,7 @@ export class MonacoBinding {
         });
       });
     };
+
     this.doc.on("beforeAllTransactions", this._beforeTransaction);
     this._decorations = new Map();
     const styleSheet = document.createElement("style");
@@ -205,7 +210,6 @@ export class MonacoBinding {
                 state.selection.head,
                 this.doc
               );
-              let ruleCounter = 0;
               if (
                 anchorAbs !== null &&
                 headAbs !== null &&
@@ -299,6 +303,10 @@ export class MonacoBinding {
     };
     this._ytextObserver = (event: any) => {
       this.mux(() => {
+        // ensure we are always operating on the same line endings
+        // https://github.com/yjs/y-monaco/issues/6#issuecomment-872951039
+        monacoModel.setEOL(this.api.editor.EndOfLineSequence.LF);
+
         let index = 0;
         event.delta.forEach((op: any) => {
           if (op.retain !== undefined) {
@@ -376,8 +384,16 @@ export class MonacoBinding {
           if (sel === null) {
             return;
           }
-          let anchor = monacoModel.getOffsetAt(sel.getStartPosition());
-          let head = monacoModel.getOffsetAt(sel.getEndPosition());
+          const startPosition = sel.getStartPosition();
+          const endPosition = sel.getEndPosition();
+          let anchor =
+            monacoModel.getOffsetAt(startPosition) +
+            (!isWindows ? 0 : startPosition.lineNumber - 1);
+          let head =
+            monacoModel.getOffsetAt(endPosition) -
+            (!isWindows
+              ? endPosition.lineNumber - startPosition.lineNumber
+              : 0);
           if (sel.getDirection() === this.api.SelectionDirection.RTL) {
             const tmp = anchor;
             anchor = head;

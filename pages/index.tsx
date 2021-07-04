@@ -195,9 +195,12 @@ export default function Home() {
         sdl: editorInterface.current?.editor.getModel()?.getValue() ?? "",
         editHash: randomHash(),
       }),
-      window.navigator.clipboard.writeText(location.href.toString()),
+      // not available in firefox
+      window.navigator.clipboard
+        ?.writeText?.(location.href.toString())
+        .then(() => true) ?? false,
     ]).then(
-      ([result]) => {
+      ([result, didCopyLinkToClipboard]) => {
         if ("error" in result) {
           alert(result.error.message);
           return;
@@ -217,12 +220,14 @@ export default function Home() {
           );
         }
 
-        toast({
-          isClosable: true,
-          position: "bottom",
-          title: "Sharing link was copied to clipboard",
-          status: "info",
-        });
+        if (didCopyLinkToClipboard === true) {
+          toast({
+            isClosable: true,
+            position: "bottom",
+            title: "Sharing link was copied to clipboard",
+            status: "info",
+          });
+        }
       },
       (e: any) => alert(e)
     );
@@ -345,7 +350,7 @@ export default function Home() {
             ) : null}
           </Flex>
           <Box ref={ref} flex="1">
-            {initialEditorSchema ? (
+            {initialEditorSchema != null ? (
               <React.Suspense fallback={null}>
                 <SchemaEditor
                   editorProps={{
@@ -361,7 +366,7 @@ export default function Home() {
                     sharedLanguageService: languageService,
                     onChange: editHash
                       ? (value) => {
-                          if (value) {
+                          if (value != null) {
                             save(value);
                           }
                         }
