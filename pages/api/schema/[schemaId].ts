@@ -1,9 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import createCors from "cors";
 import * as yup from "yup";
 import {
   GraphQLSchemaEntity,
   runWithSchemaStore,
 } from "../../../lib/schema-store";
+
+const cors = createCors();
 
 export type Data =
   | {
@@ -15,7 +18,24 @@ export type Data =
       data: Omit<GraphQLSchemaEntity, "editHash"> & { editHash: null | string };
     };
 
-export default async (req: NextApiRequest, res: NextApiResponse<Data>) => {
+const runMiddleware = <Data>(
+  req: NextApiRequest,
+  res: NextApiResponse<Data>,
+  fn: typeof cors
+) => {
+  return new Promise((resolve, reject) => {
+    fn(req, res, (result) => {
+      if (result instanceof Error) {
+        return reject(result);
+      }
+
+      return resolve(result);
+    });
+  });
+};
+
+const handler = async (req: NextApiRequest, res: NextApiResponse<Data>) => {
+  await runMiddleware(req, res, cors);
   switch (req.method) {
     case "GET":
       return await get(req, res);
@@ -32,6 +52,8 @@ export default async (req: NextApiRequest, res: NextApiResponse<Data>) => {
     }
   }
 };
+
+export default handler;
 
 const get = runWithSchemaStore(
   async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
