@@ -1,29 +1,31 @@
-import { JSONSchema, ThreadID } from "@textile/threaddb";
-import { Client, ComparisonJSON } from "@textile/threads-client";
+import { Client, ThreadID, CollectionConfig } from "@textile/hub";
 import once from "lodash/once";
 
 export const collectionTitle = "GraphQLSchema";
 
-export const schema: JSONSchema = {
-  title: collectionTitle,
-  type: "object",
-  required: ["_id"],
-  properties: {
-    _id: {
-      type: "string",
-      description: "The instance's id.",
-    },
-    editHash: {
-      type: "string",
-      description: "The hash required for editing the schema",
-    },
-    title: {
-      type: "string",
-      description: "The title of the schema.",
-    },
-    sdl: {
-      type: "string",
-      description: "The SDL that describes the schema.",
+export const schema: CollectionConfig = {
+  name: collectionTitle,
+  schema: {
+    title: collectionTitle,
+    type: "object",
+    required: ["_id"],
+    properties: {
+      _id: {
+        type: "string",
+        description: "The instance's id.",
+      },
+      editHash: {
+        type: "string",
+        description: "The hash required for editing the schema",
+      },
+      title: {
+        type: "string",
+        description: "The title of the schema.",
+      },
+      sdl: {
+        type: "string",
+        description: "The SDL that describes the schema.",
+      },
     },
   },
 };

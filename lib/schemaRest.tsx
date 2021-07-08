@@ -1,7 +1,9 @@
 import type { Data } from "../pages/api/schema/[schemaId]";
 
+const apiBaseUrl = process.env["API_BASE_URL"] || "/api/";
+
 export const get = (idOrEditHash: string): Promise<Data> =>
-  fetch(`/api/schema/${idOrEditHash}`, {
+  fetch(`${apiBaseUrl}schema/${idOrEditHash}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -16,7 +18,7 @@ export const create = (
     editHash: string;
   }
 ): Promise<Data> =>
-  fetch(`/api/schema/${id}`, {
+  fetch(`${apiBaseUrl}schema/${id}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -33,7 +35,7 @@ export const update = (
 ) => {
   const abort = new AbortController();
 
-  const promise = fetch(`/api/schema/${editHash}`, {
+  const promise = fetch(`${apiBaseUrl}schema/${editHash}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",

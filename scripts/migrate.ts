@@ -1,9 +1,8 @@
-import Client from "@textile/threads-client";
+import { Client, ThreadID } from "@textile/hub";
 import * as path from "path";
 import * as envalid from "envalid";
 import { config } from "dotenv";
-import { collectionTitle, schema } from "../lib/schema-store";
-import { ThreadID } from "@textile/threaddb";
+import { schema } from "../lib/schema-store";
 
 const main = async () => {
   config({
@@ -21,10 +20,7 @@ const main = async () => {
 
   const threadId = ThreadID.fromString(env.THREAD_ID);
 
-  await client.updateCollection(threadId, {
-    name: collectionTitle,
-    schema,
-  });
+  await client.updateCollection(threadId, schema);
 };
 
 main();

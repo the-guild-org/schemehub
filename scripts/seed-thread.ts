@@ -1,8 +1,8 @@
-import Client from "@textile/threads-client";
+import { Client } from "@textile/hub";
 import * as path from "path";
 import * as envalid from "envalid";
 import { config } from "dotenv";
-import { collectionTitle, schema } from "../lib/schema-store";
+import { schema } from "../lib/schema-store";
 
 const main = async () => {
   config({
@@ -19,17 +19,8 @@ const main = async () => {
 
   const threadId = await client.newDB(undefined, "schemehub-storage");
 
-  await client.newCollection(threadId, {
-    name: collectionTitle,
-    schema,
-  });
-
-  await client.updateCollection(threadId, {
-    name: collectionTitle,
-    schema,
-  });
-
-  client.updateCollection;
+  await client.newCollection(threadId, schema);
+  await client.updateCollection(threadId, schema);
 
   console.log(`Update .env.local\n\nTHREAD_ID=${threadId.toString()}`);
 };
