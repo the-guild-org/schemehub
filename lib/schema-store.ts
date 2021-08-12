@@ -65,7 +65,8 @@ type SchemaStore = {
     id: string,
     title: string,
     sdl: string,
-    base64Model: string
+    base64Model: string,
+    editHash: string
   ): Promise<void>;
 };
 
@@ -93,15 +94,15 @@ export const runWithSchemaStore =
           (record) => record.editHash === editHash
         );
         // for some reason schemaEntity does not include editHash when it used for querying lol Textile.io why
-        return ({ ...record, editHash } as any) ?? null;
+        return record ? ({ ...record, editHash } as any) : null;
       },
       create: (_id, title, sdl, editHash, base64YjsModel) =>
         client.create(threadId, collectionTitle, [
           { _id, title, sdl, editHash, base64YjsModel },
         ]),
-      save: (_id, title, sdl, base64YjsModel) =>
+      save: (_id, title, sdl, base64YjsModel, editHash) =>
         client.save(threadId, collectionTitle, [
-          { _id, title, sdl, base64YjsModel },
+          { _id, title, sdl, base64YjsModel, editHash },
         ]),
     };
     return await handler(store, ...args);
