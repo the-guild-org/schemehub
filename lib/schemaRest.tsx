@@ -16,6 +16,7 @@ export const create = (
     sdl: string;
     title: string;
     editHash: string;
+    base64YjsModel: string;
   }
 ): Promise<Data> =>
   fetch(`${apiBaseUrl}schema/${id}`, {

@@ -78,7 +78,7 @@ const URL_PREFIX = "/#/code/";
 export default function Home() {
   const [title, setTitle] = React.useState("");
   const [editHash, setEditHash] = React.useState<null | string>(null);
-  const initialModel = React.useRef<null | Uint8Array>();
+  const yDocumentRef = React.useRef<null | Y.Doc>();
   const [schemaId, setSchemaId] = React.useState<null | string>(null);
   const [initialEditorSchema, setInitialSchema] = React.useState<string | null>(
     null
@@ -114,12 +114,12 @@ export default function Home() {
           setTitle(res.data.title);
           setInitialSchema(res.data.sdl);
           setEditHash(res.data.editHash);
+          const ydocument = new Y.Doc();
           if (res.data.base64YjsModel) {
-            initialModel.current = uint8ToBase64.decode(
-              res.data.base64YjsModel
-            );
-            console.log(initialModel.current);
+            const model = uint8ToBase64.decode(res.data.base64YjsModel);
+            Y.applyUpdate(ydocument, model);
           }
+          yDocumentRef.current = ydocument;
         });
       });
     } else {
@@ -156,16 +156,11 @@ export default function Home() {
     api: typeof monaco,
     editor: monaco.editor.IStandaloneCodeEditor,
     editHash: string,
-    initialYJSModel?: Uint8Array | null | undefined
+    yDocument: Y.Doc
   ) => {
-    const ydocument = new Y.Doc();
-    if (initialYJSModel != null) {
-      Y.applyUpdate(ydocument, initialYJSModel);
-    }
-
     const provider = (providerRef.current = new WebrtcProvider(
       `session-${editHash}`,
-      ydocument
+      yDocument
     ));
 
     Promise.race(
@@ -191,17 +186,17 @@ export default function Home() {
       });
       new MonacoBinding(
         api,
-        ydocument.getText("monaco"),
+        yDocument.getText("monaco"),
         editor.getModel() as any,
         new Set([editor]),
         provider.awareness
       );
 
-      ydocument.on("update", () => {
+      yDocument.on("update", () => {
         attemptSave({
-          sdl: ydocument.getText("monaco").toString(),
+          sdl: yDocument.getText("monaco").toString(),
           base64YjsModel: uint8ToBase64.encode(
-            Y.encodeStateAsUpdate(ydocument)
+            Y.encodeStateAsUpdate(yDocument)
           ),
         });
       });
@@ -245,35 +240,51 @@ export default function Home() {
   const createAndStartCollaborationSession = () => {
     const id = randomHash();
 
-    schemaRest
-      .create(id, {
-        title: title.trim(),
-        sdl: editorInterface.current?.editor.getModel()?.getValue() ?? "",
-        editHash: randomHash(),
-      })
-      .then(
-        (result) => {
-          if ("error" in result) {
-            alert(result.error.message);
-            return;
-          }
-          const newURL = `${URL_PREFIX}${result.data.editHash}`;
+    const yDocument = new Y.Doc();
+    const text = yDocument.getText("monaco");
+    yDocumentRef.current = yDocument;
 
-          window.history.replaceState({}, "", newURL);
-          batchUpdates(() => {
-            setSchemaId(result.data._id);
-            setEditHash(result.data.editHash);
-          });
-          if (result.data.editHash) {
-            connect(
-              editorInterface.current!.api,
-              editorInterface.current!.editor,
-              result.data.editHash
-            );
-          }
-        },
-        (e: any) => alert(e)
-      );
+    const sdl = editorInterface.current?.editor.getModel()?.getValue() ?? "";
+    text.insert(0, sdl);
+
+    const base64YjsModel = uint8ToBase64.encode(
+      Y.encodeStateAsUpdate(yDocument)
+    );
+
+    const createInput = {
+      title: title.trim(),
+      sdl: editorInterface.current?.editor.getModel()?.getValue() ?? "",
+      editHash: randomHash(),
+      base64YjsModel,
+    };
+
+    console.log(createInput);
+
+    schemaRest.create(id, createInput).then(
+      (result) => {
+        if ("error" in result) {
+          alert(result.error.message);
+          return;
+        }
+        const newURL = `${URL_PREFIX}${result.data.editHash}`;
+
+        window.history.replaceState({}, "", newURL);
+        batchUpdates(() => {
+          setSchemaId(result.data._id);
+          setEditHash(result.data.editHash);
+        });
+
+        if (result.data.editHash) {
+          connect(
+            editorInterface.current!.api,
+            editorInterface.current!.editor,
+            result.data.editHash,
+            yDocument
+          );
+        }
+      },
+      (e: any) => alert(e)
+    );
   };
 
   const saveTaskRef = React.useRef<ReturnType<
@@ -415,8 +426,8 @@ export default function Home() {
                       editor,
                       api,
                     };
-                    if (editHash != null) {
-                      connect(api, editor, editHash, initialModel.current);
+                    if (editHash != null && yDocumentRef.current != null) {
+                      connect(api, editor, editHash, yDocumentRef.current);
                     }
                   }}
                 />

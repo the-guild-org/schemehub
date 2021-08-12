@@ -116,6 +116,7 @@ const PostInput = yup.object().shape({
   title: yup.string().required(),
   sdl: yup.string().required(),
   editHash: yup.string().required(),
+  base64YjsModel: yup.string().required(),
 });
 
 const SchemaId = yup.string().required();
@@ -137,7 +138,13 @@ const post = runWithSchemaStore(
       });
       return;
     }
-    await store.create(schemaId, data.title, data.sdl, data.editHash);
+    await store.create(
+      schemaId,
+      data.title,
+      data.sdl,
+      data.editHash,
+      data.base64YjsModel
+    );
     const schemaEntity = await store.findById(schemaId);
 
     if (schemaEntity == null) {
@@ -161,6 +168,7 @@ const post = runWithSchemaStore(
 const UpdateInput = yup.object().shape({
   title: yup.string(),
   sdl: yup.string(),
+  base64YjsModel: yup.string(),
 });
 
 type UpdateInputType = yup.InferType<typeof UpdateInput>;

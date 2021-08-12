@@ -58,7 +58,8 @@ type SchemaStore = {
     id: string,
     title: string,
     sdl: string,
-    editHash: string
+    editHash: string,
+    base64YjsModel: string
   ): Promise<Array<string>>;
   save(
     id: string,
@@ -80,22 +81,23 @@ export const runWithSchemaStore =
           .findByID<GraphQLSchemaEntity | null>(threadId, collectionTitle, id)
           .catch(() => null),
       findByEditHash: async (editHash) => {
-        const records = await client.find<GraphQLSchemaEntity>(
+        // SO yeah I cannot figure out how where conditions work and now need to wai until anyone responds on the Textile.io slack
+        // a great workaround (not) is to load all records and then filter them in JS :)
+        const allRecords = await client.find<GraphQLSchemaEntity>(
           threadId,
           collectionTitle,
-          {
-            // @ts-expect-error: invalid typings :)
-            editHash: {
-              $eq: editHash,
-            },
-          }
+          {}
         );
-        // for some reason schemaEntity does not include editHash when it used for querying lol
-        return records[0] ? { ...records[0], editHash } : null;
+
+        const record = allRecords.find(
+          (record) => record.editHash === editHash
+        );
+        // for some reason schemaEntity does not include editHash when it used for querying lol Textile.io why
+        return ({ ...record, editHash } as any) ?? null;
       },
-      create: (_id, title, sdl, editHash) =>
+      create: (_id, title, sdl, editHash, base64YjsModel) =>
         client.create(threadId, collectionTitle, [
-          { _id, title, sdl, editHash },
+          { _id, title, sdl, editHash, base64YjsModel },
         ]),
       save: (_id, title, sdl, base64YjsModel) =>
         client.save(threadId, collectionTitle, [
