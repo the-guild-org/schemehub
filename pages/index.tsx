@@ -133,104 +133,104 @@ export default function Home() {
       ydocument
     ));
 
-    const getCollaboratorName = () => {
-      let name = window.localStorage.getItem("collaboratorName");
-      if (name == null) {
-        name = randomName();
-        window.localStorage.setItem("collaboratorName", name);
-      }
-      return name;
-    };
-    provider.awareness.setLocalStateField("collaborator", {
-      name: getCollaboratorName(),
-      color: generateRandomHslColor(),
-    });
-    new MonacoBinding(
-      api,
-      ydocument.getText("monaco"),
-      editor.getModel() as any,
-      new Set([editor]),
-      provider.awareness
-    );
-
-    provider.awareness.on("change", () => {
-      const collaborators: Array<CollaboratorEntity> = [];
-      let viewer: CollaboratorEntity | null = null;
-      for (const [id, state] of provider.awareness.getStates()) {
-        if (
-          typeof state?.collaborator?.name !== "string" ||
-          typeof state?.collaborator?.color !== "string"
-        ) {
-          continue;
+    Promise.race(
+      provider.signalingConns.map(
+        (conn) =>
+          new Promise((res) => {
+            conn.once("connect", res);
+          })
+      )
+    ).then(() => {
+      console.log("WebRTC Connection Established");
+      const getCollaboratorName = () => {
+        let name = window.localStorage.getItem("collaboratorName");
+        if (name == null) {
+          name = randomName();
+          window.localStorage.setItem("collaboratorName", name);
         }
-        const collaborator: CollaboratorEntity = {
-          id: String(id),
-          name: state.collaborator.name,
-          color: state.collaborator.color,
-        };
-        if (id === provider.awareness.clientID) {
-          viewer = collaborator;
-          continue;
-        }
-
-        collaborators.push({
-          id: String(id),
-          name: state.collaborator.name,
-          color: state.collaborator.color,
-        });
-      }
-      batchUpdates(() => {
-        setCollaborators(collaborators);
-        setViewer(viewer);
+        return name;
+      };
+      provider.awareness.setLocalStateField("collaborator", {
+        name: getCollaboratorName(),
+        color: generateRandomHslColor(),
       });
+      new MonacoBinding(
+        api,
+        ydocument.getText("monaco"),
+        editor.getModel() as any,
+        new Set([editor]),
+        provider.awareness
+      );
+
+      const syncCollaboratorsAndViewer = () => {
+        const collaborators: Array<CollaboratorEntity> = [];
+        let viewer: CollaboratorEntity | null = null;
+        for (const [id, state] of provider.awareness.getStates()) {
+          if (
+            typeof state?.collaborator?.name !== "string" ||
+            typeof state?.collaborator?.color !== "string"
+          ) {
+            continue;
+          }
+          const collaborator: CollaboratorEntity = {
+            id: String(id),
+            name: state.collaborator.name,
+            color: state.collaborator.color,
+          };
+          if (id === provider.awareness.clientID) {
+            viewer = collaborator;
+            continue;
+          }
+
+          collaborators.push({
+            id: String(id),
+            name: state.collaborator.name,
+            color: state.collaborator.color,
+          });
+        }
+        batchUpdates(() => {
+          setCollaborators(collaborators);
+          setViewer(viewer);
+        });
+      };
+      syncCollaboratorsAndViewer();
+      provider.awareness.on("change", syncCollaboratorsAndViewer);
     });
+    provider.connect();
   };
 
   const saveAndStartCollaborationSession = () => {
     const id = randomHash();
 
-    Promise.all([
-      schemaRest.create(id, {
+    schemaRest
+      .create(id, {
         title: title.trim(),
         sdl: editorInterface.current?.editor.getModel()?.getValue() ?? "",
         editHash: randomHash(),
-      }),
-      // not available in firefox
-      window.navigator.clipboard
-        ?.writeText?.(location.href.toString())
-        .then(() => true) ?? false,
-    ]).then(
-      ([result, didCopyLinkToClipboard]) => {
-        if ("error" in result) {
-          alert(result.error.message);
-          return;
-        }
-        const newURL = `${URL_PREFIX}${result.data.editHash}`;
+      })
+      .then(
+        (result) => {
+          if ("error" in result) {
+            alert(result.error.message);
+            return;
+          }
+          const newURL = `${URL_PREFIX}${result.data.editHash}`;
 
-        window.history.replaceState({}, "", newURL);
-        batchUpdates(() => {
-          setSchemaId(result.data._id);
-          setEditHash(result.data.editHash);
-        });
-        if (result.data.editHash) {
-          connect(
-            editorInterface.current!.api,
-            editorInterface.current!.editor,
-            result.data.editHash
-          );
-        }
-
-        if (didCopyLinkToClipboard === true) {
-          toast({
-            isClosable: true,
-            position: "bottom",
-            title: "Sharing link was copied to clipboard",
-            status: "info",
+          window.history.replaceState({}, "", newURL);
+          batchUpdates(() => {
+            setSchemaId(result.data._id);
+            setEditHash(result.data.editHash);
           });
-        }
-      },
-      (e: any) => alert(e)
-    );
+          if (result.data.editHash) {
+            connect(
+              editorInterface.current!.api,
+              editorInterface.current!.editor,
+              result.data.editHash
+            );
+          }
+        },
+        (e: any) => alert(e)
+      );
   };
 
   const saveTaskRef = React.useRef<ReturnType<
