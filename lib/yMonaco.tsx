@@ -408,28 +408,6 @@ export class MonacoBinding {
       awareness.on("change", this._rerenderDecorations);
     });
     this.awareness = awareness;
-
-    // We wait 1s, if no other user is connected, our initial value will be the source of truth
-    let timeout = setTimeout(() => {
-      monacoModel.applyEdits([
-        {
-          range: {
-            startColumn: 1,
-            startLineNumber: 0,
-            endLineNumber: 0,
-            endColumn: 1,
-          },
-          text: value,
-        },
-      ]);
-      editors.forEach((editor) => {
-        editor.setPosition({ lineNumber: 0, column: 0 });
-      });
-    }, 1000);
-
-    this.awareness.once("change", () => {
-      clearTimeout(timeout);
-    });
   }
 
   destroy() {

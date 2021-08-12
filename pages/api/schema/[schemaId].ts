@@ -205,7 +205,8 @@ const patch = runWithSchemaStore(
     await store.save(
       schemaEntity._id,
       data.title ?? schemaEntity.title,
-      data.sdl ?? schemaEntity.sdl
+      data.sdl ?? schemaEntity.sdl,
+      data.base64YjsModel ?? schemaEntity.base64YjsModel
     );
 
     res.status(200).json({

@@ -2,7 +2,6 @@ import * as Y from "yjs";
 import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import { WebrtcProvider } from "y-webrtc";
 import {
-  useToast,
   Box,
   Input,
   InputGroup,
@@ -42,6 +41,32 @@ import { getFontColorForBackgroundColor } from "../lib/getFontColorForBackground
 import useMeasure from "react-use-measure";
 import { CopyInput } from "../components/CopyInput";
 
+const uint8ToBase64 = (function () {
+  const fromCharCode = String.fromCharCode;
+  function encode(uint8array: Uint8Array) {
+    var output = [];
+
+    for (var i = 0, length = uint8array.length; i < length; i++) {
+      output.push(fromCharCode(uint8array[i]));
+    }
+
+    return btoa(output.join(""));
+  }
+
+  function asCharCode(c: string) {
+    return c.charCodeAt(0);
+  }
+
+  function decode(chars: string) {
+    return Uint8Array.from(atob(chars), asCharCode);
+  }
+
+  return {
+    decode,
+    encode,
+  };
+})();
+
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
   ping: Int!
@@ -53,11 +78,11 @@ const URL_PREFIX = "/#/code/";
 export default function Home() {
   const [title, setTitle] = React.useState("");
   const [editHash, setEditHash] = React.useState<null | string>(null);
+  const initialModel = React.useRef<null | Uint8Array>();
   const [schemaId, setSchemaId] = React.useState<null | string>(null);
   const [initialEditorSchema, setInitialSchema] = React.useState<string | null>(
     null
   );
-  const toast = useToast();
   const route = useRouter();
 
   const languageService = React.useMemo(() => {
@@ -89,6 +114,12 @@ export default function Home() {
           setTitle(res.data.title);
           setInitialSchema(res.data.sdl);
           setEditHash(res.data.editHash);
+          if (res.data.base64YjsModel) {
+            initialModel.current = uint8ToBase64.decode(
+              res.data.base64YjsModel
+            );
+            console.log(initialModel.current);
+          }
         });
       });
     } else {
@@ -124,9 +155,13 @@ export default function Home() {
   const connect = (
     api: typeof monaco,
     editor: monaco.editor.IStandaloneCodeEditor,
-    editHash: string
+    editHash: string,
+    initialYJSModel?: Uint8Array | null | undefined
   ) => {
     const ydocument = new Y.Doc();
+    if (initialYJSModel != null) {
+      Y.applyUpdate(ydocument, initialYJSModel);
+    }
 
     const provider = (providerRef.current = new WebrtcProvider(
       `session-${editHash}`,
@@ -162,6 +197,15 @@ export default function Home() {
         provider.awareness
       );
 
+      ydocument.on("update", () => {
+        attemptSave({
+          sdl: ydocument.getText("monaco").toString(),
+          base64YjsModel: uint8ToBase64.encode(
+            Y.encodeStateAsUpdate(ydocument)
+          ),
+        });
+      });
+
       const syncCollaboratorsAndViewer = () => {
         const collaborators: Array<CollaboratorEntity> = [];
         let viewer: CollaboratorEntity | null = null;
@@ -196,10 +240,9 @@ export default function Home() {
       syncCollaboratorsAndViewer();
       provider.awareness.on("change", syncCollaboratorsAndViewer);
     });
-    provider.connect();
   };
 
-  const saveAndStartCollaborationSession = () => {
+  const createAndStartCollaborationSession = () => {
     const id = randomHash();
 
     schemaRest
@@ -244,9 +287,9 @@ export default function Home() {
   /**
    * Debounced save of the schema
    */
-  const [save] = React.useState(() =>
+  const [attemptSave] = React.useState(() =>
     debounce(
-      (value: string) => {
+      (params: { sdl: string; base64YjsModel: string }) => {
         const provider = providerRef.current;
         if (provider == null || latestDataRef.current === null) {
           return;
@@ -267,7 +310,8 @@ export default function Home() {
           }
           saveTaskRef.current = saveTask = schemaRest.update(editHash, {
             title: title ?? "",
-            sdl: value,
+            sdl: params.sdl,
+            base64YjsModel: params.base64YjsModel,
           });
           saveTask.promise
             .catch((err) => {
@@ -315,7 +359,7 @@ export default function Home() {
                           return;
                         }
 
-                        saveAndStartCollaborationSession();
+                        createAndStartCollaborationSession();
                       }}
                     >
                       Collaborate
@@ -364,13 +408,6 @@ export default function Home() {
                       readOnly: editHash == null && schemaId != null,
                     },
                     sharedLanguageService: languageService,
-                    onChange: editHash
-                      ? (value) => {
-                          if (value != null) {
-                            save(value);
-                          }
-                        }
-                      : undefined,
                   }}
                   schema={initialEditorSchema}
                   onEditor={(editor, api) => {
@@ -379,7 +416,7 @@ export default function Home() {
                       api,
                     };
                     if (editHash != null) {
-                      connect(api, editor, editHash);
+                      connect(api, editor, editHash, initialModel.current);
                     }
                   }}
                 />

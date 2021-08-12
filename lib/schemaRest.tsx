@@ -1,6 +1,6 @@
 import type { Data } from "../pages/api/schema/[schemaId]";
 
-const apiBaseUrl = process.env["NEXT_PUBLIC_API_BASE_URL"] || "/api/";
+const apiBaseUrl = /* process.env["NEXT_PUBLIC_API_BASE_URL"] || */ "/api/";
 
 export const get = (idOrEditHash: string): Promise<Data> =>
   fetch(`${apiBaseUrl}schema/${idOrEditHash}`, {
@@ -30,6 +30,7 @@ export const update = (
   editHash: string,
   props: {
     sdl?: string;
+    base64YjsModel?: string;
     title?: string;
   }
 ) => {

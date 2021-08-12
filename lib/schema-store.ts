@@ -26,6 +26,10 @@ export const schema: CollectionConfig = {
         type: "string",
         description: "The SDL that describes the schema.",
       },
+      base64YjsModel: {
+        type: "string",
+        description: "The YJS Model encoded as a base64 string.",
+      },
     },
   },
 };
@@ -35,6 +39,7 @@ export interface GraphQLSchemaEntity {
   title: string;
   sdl: string;
   editHash: string;
+  base64YjsModel: string;
 }
 
 const initClient = once(async () => {
@@ -55,7 +60,12 @@ type SchemaStore = {
     sdl: string,
     editHash: string
   ): Promise<Array<string>>;
-  save(id: string, title: string, sdl: string): Promise<void>;
+  save(
+    id: string,
+    title: string,
+    sdl: string,
+    base64Model: string
+  ): Promise<void>;
 };
 
 export const runWithSchemaStore =
@@ -87,8 +97,10 @@ export const runWithSchemaStore =
         client.create(threadId, collectionTitle, [
           { _id, title, sdl, editHash },
         ]),
-      save: (_id, title, sdl) =>
-        client.save(threadId, collectionTitle, [{ _id, title, sdl }]),
+      save: (_id, title, sdl, base64YjsModel) =>
+        client.save(threadId, collectionTitle, [
+          { _id, title, sdl, base64YjsModel },
+        ]),
     };
     return await handler(store, ...args);
   };
