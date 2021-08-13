@@ -10,12 +10,19 @@ import {
 
 const loadStore = once(async (): Promise<Store> => {
   switch (process.env["STORE_ADAPTER"]) {
+    case "faunadb": {
+      const { createAdapter } = await import(
+        "../../../lib/store/faunadb-adapter"
+      );
+      return await createAdapter();
+    }
     case "threaddb":
-    default:
+    default: {
       const { createAdapter } = await import(
         "../../../lib/store/threaddb-adapter"
       );
       return await createAdapter();
+    }
   }
 });
 

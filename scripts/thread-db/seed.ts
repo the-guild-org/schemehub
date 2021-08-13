@@ -6,7 +6,7 @@ import { schema } from "../../lib/store/threaddb-adapter";
 
 const main = async () => {
   config({
-    path: path.resolve(__dirname, "..", ".env.local"),
+    path: path.resolve(__dirname, "..", "..", ".env.local"),
   });
   const env = envalid.cleanEnv(process.env, {
     TEXTILE_API_PUBLIC_KEY: envalid.str(),
