@@ -1,8 +1,14 @@
-import type { Data } from "../pages/api/schema/[schemaId]";
+import type {
+  Response,
+  SchemaEntityWithOptionalEditHash,
+} from "../pages/api/schema/[schemaId]";
+import type { SchemaEntity } from "./store/store";
 
 const apiBaseUrl = process.env["NEXT_PUBLIC_API_BASE_URL"] || "/api/";
 
-export const get = (idOrEditHash: string): Promise<Data> =>
+export const get = (
+  idOrEditHash: string
+): Promise<Response<SchemaEntityWithOptionalEditHash>> =>
   fetch(`${apiBaseUrl}schema/${idOrEditHash}`, {
     method: "GET",
     headers: {
@@ -18,7 +24,7 @@ export const create = (
     editHash: string;
     base64YjsModel: string;
   }
-): Promise<Data> =>
+): Promise<Response<SchemaEntity>> =>
   fetch(`${apiBaseUrl}schema/${id}`, {
     method: "POST",
     headers: {

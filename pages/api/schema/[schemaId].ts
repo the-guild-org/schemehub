@@ -1,22 +1,42 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import createCors from "cors";
-import * as yup from "yup";
+import { z } from "zod";
+import once from "lodash/once";
 import {
-  GraphQLSchemaEntity,
-  runWithSchemaStore,
-} from "../../../lib/schema-store";
+  Store,
+  createRunWithStore,
+  SchemaEntity,
+} from "../../../lib/store/store";
+
+const loadStore = once(async (): Promise<Store> => {
+  switch (process.env["store"]) {
+    case "threaddb":
+    default:
+      const { createAdapter } = await import(
+        "../../../lib/store/threaddb-adapter"
+      );
+      return await createAdapter();
+  }
+});
+
+const runWithStore = createRunWithStore(loadStore);
 
 const cors = createCors();
 
-export type Data =
+export type Response<SuccessPayload> =
   | {
       error: {
         message: string;
       };
     }
   | {
-      data: Omit<GraphQLSchemaEntity, "editHash"> & { editHash: null | string };
+      data: SuccessPayload;
     };
+
+export type SchemaEntityWithOptionalEditHash = Omit<
+  SchemaEntity,
+  "editHash"
+> & { editHash: string | null };
 
 const runMiddleware = <Data>(
   req: NextApiRequest,
@@ -34,7 +54,7 @@ const runMiddleware = <Data>(
   });
 };
 
-const handler = async (req: NextApiRequest, res: NextApiResponse<Data>) => {
+const handler = async (req: NextApiRequest, res: NextApiResponse) => {
   await runMiddleware(req, res, cors);
   switch (req.method) {
     case "GET":
@@ -55,8 +75,12 @@ const handler = async (req: NextApiRequest, res: NextApiResponse<Data>) => {
 
 export default handler;
 
-const get = runWithSchemaStore(
-  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
+const get = runWithStore(
+  async (
+    store,
+    req: NextApiRequest,
+    res: NextApiResponse<Response<SchemaEntityWithOptionalEditHash>>
+  ) => {
     const { schemaId: schemaIdOrEditHash } = req.query;
 
     if (typeof schemaIdOrEditHash !== "string") {
@@ -69,7 +93,7 @@ const get = runWithSchemaStore(
     }
 
     if (schemaIdOrEditHash.endsWith(":edit")) {
-      const schemaEntity = await store.findByEditHash(
+      const schemaEntity = await store.findWhereEditHash(
         schemaIdOrEditHash.replace(":edit", "")
       );
       if (schemaEntity == null) {
@@ -89,7 +113,7 @@ const get = runWithSchemaStore(
       return;
     }
 
-    const schemaEntity = await store.findById(schemaIdOrEditHash);
+    const schemaEntity = await store.findWhereId(schemaIdOrEditHash);
 
     if (schemaEntity == null) {
       res.status(404).json({
@@ -112,25 +136,28 @@ const get = runWithSchemaStore(
   }
 );
 
-const PostInput = yup.object().shape({
-  title: yup.string().required(),
-  sdl: yup.string().required(),
-  editHash: yup.string().required(),
-  base64YjsModel: yup.string().required(),
+const PostInput = z.object({
+  title: z.string(),
+  sdl: z.string(),
+  editHash: z.string(),
+  base64YjsModel: z.string(),
 });
 
-const SchemaId = yup.string().required();
+const SchemaId = z.string();
 
-type PostInputType = yup.InferType<typeof PostInput>;
+type PostInputType = z.TypeOf<typeof PostInput>;
 
-const post = runWithSchemaStore(
-  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
+const post = runWithStore(
+  async (
+    store,
+    req: NextApiRequest,
+    res: NextApiResponse<Response<SchemaEntity>>
+  ) => {
     let data: PostInputType;
-    let schemaId: string;
     try {
-      data = await PostInput.validate(req.body);
-      schemaId = await SchemaId.validate(req.query["schemaId"]);
+      data = PostInput.parse(req.body);
     } catch (err) {
+      console.error(err);
       res.status(400).json({
         error: {
           message: "Invalid input.",
@@ -138,14 +165,14 @@ const post = runWithSchemaStore(
       });
       return;
     }
-    await store.create(
-      schemaId,
-      data.title,
-      data.sdl,
-      data.editHash,
-      data.base64YjsModel
-    );
-    const schemaEntity = await store.findById(schemaId);
+    const schemaId = await store.create({
+      title: data.title,
+      sdl: data.sdl,
+      editHash: data.editHash,
+      base64YjsModel: data.base64YjsModel,
+    });
+
+    const schemaEntity = await store.findWhereId(schemaId);
 
     if (schemaEntity == null) {
       res.status(500).json({
@@ -165,21 +192,25 @@ const post = runWithSchemaStore(
   }
 );
 
-const UpdateInput = yup.object().shape({
-  title: yup.string(),
-  sdl: yup.string(),
-  base64YjsModel: yup.string(),
+const UpdateInput = z.object({
+  title: z.string(),
+  sdl: z.string(),
+  base64YjsModel: z.string(),
 });
 
-type UpdateInputType = yup.InferType<typeof UpdateInput>;
+type UpdateInputType = z.TypeOf<typeof UpdateInput>;
 
-const patch = runWithSchemaStore(
-  async (store, req: NextApiRequest, res: NextApiResponse<Data>) => {
+const patch = runWithStore(
+  async (
+    store,
+    req: NextApiRequest,
+    res: NextApiResponse<Response<{ success: boolean }>>
+  ) => {
     let data: UpdateInputType;
     let schemaId: string;
     try {
-      data = await UpdateInput.validate(req.body);
-      schemaId = await SchemaId.validate(req.query["schemaId"]);
+      data = UpdateInput.parse(req.body);
+      schemaId = SchemaId.parse(req.query["schemaId"]);
     } catch (err) {
       res.status(400).json({
         error: {
@@ -200,8 +231,13 @@ const patch = runWithSchemaStore(
 
     const editHash = schemaId.replace(":edit", "");
 
-    const schemaEntity = await store.findByEditHash(editHash);
-    if (schemaEntity == null) {
+    const didUpdate = await store.updateWhereEditHash(editHash, {
+      title: data.title,
+      sdl: data.sdl,
+      base64YjsModel: data.base64YjsModel,
+    });
+
+    if (didUpdate === false) {
       res.status(404).json({
         error: {
           message: "Not found.",
@@ -210,18 +246,9 @@ const patch = runWithSchemaStore(
       return;
     }
 
-    await store.save(
-      schemaEntity._id,
-      data.title ?? schemaEntity.title,
-      data.sdl ?? schemaEntity.sdl,
-      data.base64YjsModel ?? schemaEntity.base64YjsModel,
-      editHash
-    );
-
     res.status(200).json({
       data: {
-        ...schemaEntity,
-        editHash: `${schemaEntity.editHash}:edit`,
+        success: true,
       },
     });
   }

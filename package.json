@@ -34,7 +34,7 @@
     "y-protocols": "1.0.5",
     "y-webrtc": "10.2.0",
     "yjs": "13.5.10",
-    "yup": "0.32.9"
+    "zod": "3.7.1"
   },
   "babelMacros": {
     "twin": {

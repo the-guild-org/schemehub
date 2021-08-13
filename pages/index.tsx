@@ -110,7 +110,7 @@ export default function Home() {
           return;
         }
         batchUpdates(() => {
-          setSchemaId(res.data._id);
+          setSchemaId(res.data.id);
           setTitle(res.data.title);
           setInitialSchema(res.data.sdl);
           setEditHash(res.data.editHash);
@@ -270,7 +270,7 @@ export default function Home() {
 
         window.history.replaceState({}, "", newURL);
         batchUpdates(() => {
-          setSchemaId(result.data._id);
+          setSchemaId(result.data.id);
           setEditHash(result.data.editHash);
         });
 
