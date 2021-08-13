@@ -20,7 +20,7 @@ SchemeHub supports multiple database types.
 cp .env.local.sample .env.local
 ```
 
-Set `STORE_ADAPTER` to `FAUNADB` within `.env.local`.
+Set `STORE_ADAPTER` to `faunadb` within `.env.local`.
 Setup `FAUNA_DB_SECRET` and `FAUNA_DB_DOMAIN` within `.env.local` (You need to create an account on https://fauna.com or host a local instance).
 
 ##### Seed Database
@@ -41,6 +41,7 @@ yarn ts-node scripts/fauna-db/migrate
 cp .env.local.sample .env.local
 ```
 
+Set `STORE_ADAPTER` to `threaddb` within `.env.local`.
 Setup `TEXTILE_API_PUBLIC_KEY` and `TEXTILE_API_SECRET_KEY` within `.env.local` (You need to create an account on https://textile.io).
 
 ##### Seed Database
@@ -79,9 +80,9 @@ The following environment variables must be configured.
 
 | Name                     | Description                                                                            | Example Value                 |
 | ------------------------ | -------------------------------------------------------------------------------------- | ----------------------------- |
-| `STORE_ADAPTER`          | Store adapter used for persisting data. Supported values are `THREADDB` and `FAUNADB`. | `THREADDB`                    |
-| `TEXTILE_API_PUBLIC_KEY` | Textile.io api public key. (required if using `THREADDB`)                              | `ixgh8sfzg4h3dvzptq2jhb9tfs4` |
-| `TEXTILE_API_SECRET_KEY` | Textile.io api secret key. (required if using `THREADDB`)                              | `4sft9bhj2qtpzvd3h4gzfs8hgxi` |
-| `THREAD_ID`              | Textile.io Thread ID. (required if using `THREADDB`)                                   | `schemehub-storage`           |
-| `FAUNA_DB_SECRET`        | FaunaDB secret. (required if using `FAUNADB`)                                          | `4sft9bhj2qtpzvd3h4gzfs8hgxi` |
-| `FAUNA_DB_DOMAIN`        | FaunaDB Domain. (required if using `FAUNADB`)                                          | `db.eu.fauna.com`             |
+| `STORE_ADAPTER`          | Store adapter used for persisting data. Supported values are `threaddb` and `faunadb`. | `threaddb`                    |
+| `TEXTILE_API_PUBLIC_KEY` | Textile.io api public key. (required if using `threaddb`)                              | `ixgh8sfzg4h3dvzptq2jhb9tfs4` |
+| `TEXTILE_API_SECRET_KEY` | Textile.io api secret key. (required if using `threaddb`)                              | `4sft9bhj2qtpzvd3h4gzfs8hgxi` |
+| `THREAD_ID`              | Textile.io Thread ID. (required if using `faunadb`)                                    | `schemehub-storage`           |
+| `FAUNA_DB_SECRET`        | FaunaDB secret. (required if using `faunadb`)                                          | `4sft9bhj2qtpzvd3h4gzfs8hgxi` |
+| `FAUNA_DB_DOMAIN`        | FaunaDB Domain. (required if using `faunadb`)                                          | `db.eu.fauna.com`             |
