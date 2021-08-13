@@ -9,7 +9,7 @@ import {
 } from "../../../lib/store/store";
 
 const loadStore = once(async (): Promise<Store> => {
-  switch (process.env["store"]) {
+  switch (process.env["STORE_ADAPTER"]) {
     case "threaddb":
     default:
       const { createAdapter } = await import(

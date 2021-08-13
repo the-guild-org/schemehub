@@ -1,12 +1,20 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# SchemeHub
 
-## Install dependencies
+A web app for collaborative editing of GraphQL Schemas.
+
+## Development Instructions
+
+### Install dependencies
 
 ```bash
 yarn
 ```
 
-## Setup database (ThreadDB)
+### Setup Database
+
+SchemeHub supports multiple database types.
+
+#### ThreadDB
 
 ```bash
 cp .env.local.sample .env.local
@@ -14,49 +22,43 @@ cp .env.local.sample .env.local
 
 Setup `TEXTILE_API_PUBLIC_KEY` and `TEXTILE_API_SECRET_KEY` within `.env.local` (You need to create an account on https://textile.io).
 
+##### Seed Database
+
 ```bash
-yarn ts-node scripts/seed-thread
+yarn ts-node scripts/thread-db/seed
 ```
 
 Copy the printed `THREAD_ID` into `.env.local`.
 
-## Migrate database (ThreadDB)
+##### Migrate database
 
 After the database got seeded you can run the migrations via. This is necessary every time the model changes.
 
 ```bash
-yarn ts-node scripts/migrate
+yarn ts-node scripts/thread-db/migrate
 ```
 
-## Getting Started
+### Run Project
 
-First, run the development server:
+Start the development server.
 
 ```bash
-npm run dev
-# or
 yarn dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `pages/index.js`. The page auto-updates as you edit the file.
-
-[API routes](https://nextjs.org/docs/api-routes/introduction) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.js`.
-
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/api-routes/introduction) instead of React pages.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The easiest way to deploy SchemeHub app is to use the [Vercel Platform](https://vercel.com/new) from the creators of Next.js.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+Check out the [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+
+The following environment variables must be configured.
+
+| Name                     | Description                                                              | Example Value                 |
+| ------------------------ | ------------------------------------------------------------------------ | ----------------------------- |
+| `STORE_ADAPTER`          | Store adapter used for persisting data. Supported values are `THREADDB`. | `THREADDB`                    |
+| `TEXTILE_API_PUBLIC_KEY` | Textile.io api public key. (required if using `THREADDB`)                | `ixgh8sfzg4h3dvzptq2jhb9tfs4` |
+| `TEXTILE_API_SECRET_KEY` | Textile.io api secret key. (required if using `THREADDB`)                | `4sft9bhj2qtpzvd3h4gzfs8hgxi` |
+| `THREAD_ID`              | Textile.io Thread ID. (required if using `THREADDB`)                     | `schemehub-storage`           |
