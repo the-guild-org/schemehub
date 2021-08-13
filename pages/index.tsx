@@ -1,37 +1,71 @@
-import { useToast, SimpleGrid, Box } from "@chakra-ui/react";
-import SchemaEditor from "../components/schema-viewer";
+import * as Y from "yjs";
+import type * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import { WebrtcProvider } from "y-webrtc";
 import {
-  decompressFromEncodedURIComponent,
-  compressToEncodedURIComponent,
-} from "lz-string";
+  Box,
+  Input,
+  InputGroup,
+  InputLeftAddon,
+  Flex,
+  Button,
+  HStack,
+  Heading,
+  Spinner,
+  Text,
+  Center,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  PopoverCloseButton,
+  PopoverHeader,
+  PopoverBody,
+  PopoverArrow,
+  VStack,
+  IconButton,
+  Badge,
+} from "@chakra-ui/react";
+import { EditIcon } from "@chakra-ui/icons";
+import SchemaEditor from "../components/schema-viewer";
 import { useRouter } from "next/dist/client/router";
 import React from "react";
 import { Page } from "../components/common";
 import { EnrichedLanguageService } from "@theguild/editor";
-import ReactFlow, {
-  ReactFlowProvider,
-  isNode,
-  Node,
-  Position,
-  Connection,
-  Elements,
-  Edge,
-  MiniMap,
-  Controls,
-} from "react-flow-renderer";
-import dagre from "dagre";
-import {
-  buildSchema,
-  GraphQLNamedType,
-  GraphQLOutputType,
-  GraphQLSchema,
-  isInterfaceType,
-  isIntrospectionType,
-  isListType,
-  isNonNullType,
-  isObjectType,
-  isScalarType,
-} from "graphql";
+import { MonacoBinding } from "../lib/yMonaco";
+import * as schemaRest from "../lib/schemaRest";
+import { randomHash } from "../lib/randomHash";
+import { randomName } from "../lib/randomName";
+import { generateRandomHslColor } from "../lib/generateHSLAColors";
+import debounce from "lodash/debounce";
+import { useBatchedUpdates } from "../lib/hooks/useBatchedUpdates";
+import { getFontColorForBackgroundColor } from "../lib/getFontColorForBackgroundColor";
+import useMeasure from "react-use-measure";
+import { CopyInput } from "../components/CopyInput";
+
+const uint8ToBase64 = (function () {
+  const fromCharCode = String.fromCharCode;
+  function encode(uint8array: Uint8Array) {
+    var output = [];
+
+    for (var i = 0, length = uint8array.length; i < length; i++) {
+      output.push(fromCharCode(uint8array[i]));
+    }
+
+    return btoa(output.join(""));
+  }
+
+  function asCharCode(c: string) {
+    return c.charCodeAt(0);
+  }
+
+  function decode(chars: string) {
+    return Uint8Array.from(atob(chars), asCharCode);
+  }
+
+  return {
+    decode,
+    encode,
+  };
+})();
 
 const DEFAULT_SCHEMA = `# Start creating your schema!
 type Query {
@@ -39,113 +73,21 @@ type Query {
 }
 `;
 
-const dagreGraph = new dagre.graphlib.Graph();
-dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-const nodeWidth = 400;
-const nodeHeight = 80;
-
-const getLayoutedElements = (elements: Elements, direction = "TB") => {
-  const isHorizontal = direction === "LR";
-  dagreGraph.setGraph({ rankdir: direction });
-
-  elements.forEach((el: Node | Connection | Edge) => {
-    if (isNode(el)) {
-      dagreGraph.setNode(el.id, { width: nodeWidth, height: nodeHeight });
-    } else {
-      dagreGraph.setEdge(el.source as any, el.target as any);
-    }
-  });
-
-  dagre.layout(dagreGraph);
-
-  return elements.map((el: any) => {
-    if (isNode(el)) {
-      const nodeWithPosition = dagreGraph.node(el.id);
-      el.targetPosition = isHorizontal ? Position.Left : Position.Top;
-      el.sourcePosition = isHorizontal ? Position.Right : Position.Bottom;
-
-      // unfortunately we need this little hack to pass a slightly different position
-      // to notify react flow about the change. Moreover we are shifting the dagre node position
-      // (anchor=center center) to the top left so it matches the react flow node anchor point (top left).
-      el.position = {
-        x: nodeWithPosition.x - nodeWidth / 2 + Math.random() / 1000,
-        y: nodeWithPosition.y - nodeHeight / 2,
-      };
-    }
-
-    return el;
-  });
-};
-
-function unwrapType(t: GraphQLOutputType): GraphQLNamedType {
-  if (isNonNullType(t)) {
-    return unwrapType(t.ofType);
-  }
-
-  if (isListType(t)) {
-    return unwrapType(t.ofType);
-  }
-
-  return t;
-}
-
-function createFromSchema(schema: GraphQLSchema): Elements {
-  const result: Elements = [];
-  const types = schema.getTypeMap();
-
-  for (const [typeName, type] of Object.entries(types)) {
-    if (isScalarType(type) || isIntrospectionType(type)) {
-      continue;
-    }
-
-    result.push({
-      id: typeName,
-      data: {
-        label: typeName,
-      },
-      position: { x: 0, y: 0 },
-    });
-
-    if (isObjectType(type) || isInterfaceType(type)) {
-      const fields = type.getFields();
-
-      for (const [fieldName, field] of Object.entries(fields)) {
-        const baseType = unwrapType(field.type);
-
-        if (isScalarType(baseType) || isIntrospectionType(baseType)) {
-          continue;
-        }
-
-        result.push({
-          id: `${typeName}.${fieldName}`,
-          source: typeName,
-          label: `${fieldName}: ${field.type.toString()}`,
-          target: baseType.name,
-          sourceHandle: `${typeName}.${fieldName}`,
-          animated: true,
-        });
-      }
-    }
-  }
-
-  return getLayoutedElements(result);
-}
-
 const URL_PREFIX = "/#/code/";
 
 export default function Home() {
-  const [initialEditorSchema, setInitialSchema] =
-    React.useState(DEFAULT_SCHEMA);
-  const [schema, setSchema] = React.useState<GraphQLSchema | null>(
-    buildSchema(initialEditorSchema)
+  const [title, setTitle] = React.useState("");
+  const [editHash, setEditHash] = React.useState<null | string>(null);
+  const yDocumentRef = React.useRef<null | Y.Doc>();
+  const [schemaId, setSchemaId] = React.useState<null | string>(null);
+  const [initialEditorSchema, setInitialSchema] = React.useState<string | null>(
+    null
   );
-  const toast = useToast();
   const route = useRouter();
 
   const languageService = React.useMemo(() => {
     const service = new EnrichedLanguageService({
-      schemaString: initialEditorSchema,
+      schemaString: initialEditorSchema ?? "",
       schemaConfig: {
         buildSchemaOptions: {
           assumeValid: true,
@@ -154,98 +96,534 @@ export default function Home() {
       },
     });
 
-    const originalTry = service.trySchema;
-
-    service.trySchema = (schema) => {
-      originalTry.call(service, schema);
-      service.getSchema().then((schema) => {
-        if (schema) {
-          setSchema(schema);
-        }
-      });
-    };
-
     return service;
   }, []);
 
+  const batchUpdates = useBatchedUpdates();
+
   React.useEffect(() => {
     if (route.asPath && route.asPath.startsWith(URL_PREFIX)) {
-      const compressedHash = route.asPath.replace(URL_PREFIX, "");
-      const value = decompressFromEncodedURIComponent(compressedHash);
-
-      if (value) {
-        setInitialSchema(value);
-        setSchema(buildSchema(value));
-      }
+      const schemaIdOrEditHash = route.asPath.replace(URL_PREFIX, "");
+      schemaRest.get(schemaIdOrEditHash).then((res) => {
+        if ("error" in res) {
+          alert(res.error);
+          return;
+        }
+        batchUpdates(() => {
+          setSchemaId(res.data.id);
+          setTitle(res.data.title);
+          setInitialSchema(res.data.sdl);
+          setEditHash(res.data.editHash);
+          const ydocument = new Y.Doc();
+          if (res.data.base64YjsModel) {
+            const model = uint8ToBase64.decode(res.data.base64YjsModel);
+            Y.applyUpdate(ydocument, model);
+          }
+          yDocumentRef.current = ydocument;
+        });
+      });
+    } else {
+      setInitialSchema(DEFAULT_SCHEMA);
     }
   }, []);
 
-  const [elements, setElements] = React.useState<Elements>([]);
+  const latestDataRef = React.useRef<{
+    schemaId: string | null;
+    title: string | null;
+    editHash: string | null;
+  } | null>(null);
 
   React.useEffect(() => {
-    if (languageService && schema) {
-      const elements = createFromSchema(schema);
-      setElements(elements);
-    }
-  }, [schema, languageService]);
+    latestDataRef.current = {
+      schemaId,
+      title,
+      editHash,
+    };
+  });
+
+  const editorInterface = React.useRef<null | {
+    editor: monaco.editor.IStandaloneCodeEditor;
+    api: typeof monaco;
+  }>(null);
+
+  const providerRef = React.useRef<null | WebrtcProvider>(null);
+
+  const [viewer, setViewer] = React.useState<null | CollaboratorEntity>(null);
+  const [collaborators, setCollaborators] =
+    React.useState<null | Array<CollaboratorEntity>>(null);
+
+  const connect = (
+    api: typeof monaco,
+    editor: monaco.editor.IStandaloneCodeEditor,
+    editHash: string,
+    yDocument: Y.Doc
+  ) => {
+    const provider = (providerRef.current = new WebrtcProvider(
+      `session-${editHash}`,
+      yDocument
+    ));
+
+    Promise.race(
+      provider.signalingConns.map(
+        (conn) =>
+          new Promise((res) => {
+            conn.once("connect", res);
+          })
+      )
+    ).then(() => {
+      console.log("WebRTC Connection Established");
+      const getCollaboratorName = () => {
+        let name = window.localStorage.getItem("collaboratorName");
+        if (name == null) {
+          name = randomName();
+          window.localStorage.setItem("collaboratorName", name);
+        }
+        return name;
+      };
+      provider.awareness.setLocalStateField("collaborator", {
+        name: getCollaboratorName(),
+        color: generateRandomHslColor(),
+      });
+      new MonacoBinding(
+        api,
+        yDocument.getText("monaco"),
+        editor.getModel() as any,
+        new Set([editor]),
+        provider.awareness
+      );
+
+      yDocument.on("update", () => {
+        attemptSave({
+          sdl: yDocument.getText("monaco").toString(),
+          base64YjsModel: uint8ToBase64.encode(
+            Y.encodeStateAsUpdate(yDocument)
+          ),
+        });
+      });
+
+      const syncCollaboratorsAndViewer = () => {
+        const collaborators: Array<CollaboratorEntity> = [];
+        let viewer: CollaboratorEntity | null = null;
+        for (const [id, state] of provider.awareness.getStates()) {
+          if (
+            typeof state?.collaborator?.name !== "string" ||
+            typeof state?.collaborator?.color !== "string"
+          ) {
+            continue;
+          }
+          const collaborator: CollaboratorEntity = {
+            id: String(id),
+            name: state.collaborator.name,
+            color: state.collaborator.color,
+          };
+          if (id === provider.awareness.clientID) {
+            viewer = collaborator;
+            continue;
+          }
+
+          collaborators.push({
+            id: String(id),
+            name: state.collaborator.name,
+            color: state.collaborator.color,
+          });
+        }
+        batchUpdates(() => {
+          setCollaborators(collaborators);
+          setViewer(viewer);
+        });
+      };
+      syncCollaboratorsAndViewer();
+      provider.awareness.on("change", syncCollaboratorsAndViewer);
+    });
+  };
+
+  const createAndStartCollaborationSession = () => {
+    const id = randomHash();
+
+    const yDocument = new Y.Doc();
+    const text = yDocument.getText("monaco");
+    yDocumentRef.current = yDocument;
+
+    const sdl = editorInterface.current?.editor.getModel()?.getValue() ?? "";
+    text.insert(0, sdl);
+
+    const base64YjsModel = uint8ToBase64.encode(
+      Y.encodeStateAsUpdate(yDocument)
+    );
+
+    const createInput = {
+      title: title.trim(),
+      sdl: editorInterface.current?.editor.getModel()?.getValue() ?? "",
+      editHash: randomHash(),
+      base64YjsModel,
+    };
+
+    console.log(createInput);
+
+    schemaRest.create(id, createInput).then(
+      (result) => {
+        if ("error" in result) {
+          alert(result.error.message);
+          return;
+        }
+        const newURL = `${URL_PREFIX}${result.data.editHash}`;
+
+        window.history.replaceState({}, "", newURL);
+        batchUpdates(() => {
+          setSchemaId(result.data.id);
+          setEditHash(result.data.editHash);
+        });
+
+        if (result.data.editHash) {
+          connect(
+            editorInterface.current!.api,
+            editorInterface.current!.editor,
+            result.data.editHash,
+            yDocument
+          );
+        }
+      },
+      (e: any) => alert(e)
+    );
+  };
+
+  const saveTaskRef = React.useRef<ReturnType<
+    typeof schemaRest["update"]
+  > | null>(null);
+
+  const [isSavingCount, setIsSavingCount] = React.useState(0);
+
+  const isSaving = isSavingCount > 0;
+
+  /**
+   * Debounced save of the schema
+   */
+  const [attemptSave] = React.useState(() =>
+    debounce(
+      (params: { sdl: string; base64YjsModel: string }) => {
+        const provider = providerRef.current;
+        if (provider == null || latestDataRef.current === null) {
+          return;
+        }
+
+        // if we are the client with the lowest id, we persist the changes.
+        const [lowestId] = Array.from(
+          provider.awareness.getStates().keys()
+        ).sort((a, b) => a - b);
+        if (
+          lowestId === provider.awareness.clientID &&
+          latestDataRef.current?.editHash != null
+        ) {
+          const { editHash, title } = latestDataRef.current;
+          let saveTask = saveTaskRef.current;
+          if (saveTask) {
+            saveTask.cancel();
+          }
+          saveTaskRef.current = saveTask = schemaRest.update(editHash, {
+            title: title ?? "",
+            sdl: params.sdl,
+            base64YjsModel: params.base64YjsModel,
+          });
+          saveTask.promise
+            .catch((err) => {
+              console.log(err);
+            })
+            .finally(() => {
+              setIsSavingCount((count) => count - 1);
+            });
+          setIsSavingCount((count) => count + 1);
+        }
+      },
+      500,
+      {
+        /* Make sure we save at least every 10 seconds in a super busy session with lots of edits. */
+        maxWait: 10000,
+      }
+    )
+  );
+
+  const [ref, bounds] = useMeasure();
 
   return (
     <Page>
-      <SimpleGrid columns={2} spacing={4} p={8} background={"black"}>
-        <Box border="1px solid #E535AB" borderRadius={6} overflow={"hidden"}>
-          <SchemaEditor
-            editorProps={{
-              height: "84vh",
-              theme: "vs-dark",
-              options: {
-                automaticLayout: true,
-                minimap: {
-                  enabled: false,
-                },
-              },
-              sharedLanguageService: languageService,
-            }}
-            schema={initialEditorSchema}
-            onUserSave={(content) => {
-              const newURL = `${URL_PREFIX}${compressToEncodedURIComponent(
-                content.trim()
-              )}`;
+      <Flex background="#1E1E1E" minHeight="calc(100vh - 6rem)">
+        <Box width="calc(100vw - 250px)" display="flex" flexDirection="column">
+          <Flex color="white" p="3" width="100%">
+            <HStack maxWidth="500px">
+              {schemaId === null ? (
+                <>
+                  <InputGroup>
+                    <InputLeftAddon children="Schema Title" />
+                    <Input
+                      type="text"
+                      value={title}
+                      onChange={(ev) => setTitle(ev.target.value)}
+                    />
+                  </InputGroup>
 
-              window.history.replaceState({}, "", newURL);
-              window.navigator.clipboard
-                .writeText(location.href.toString())
-                .then(
-                  () => {
-                    toast({
-                      isClosable: true,
-                      position: "bottom",
-                      title: "Sharing link was copied to clipboard",
-                      status: "info",
-                    });
-                  },
-                  (e: any) => alert(e)
-                );
+                  <Box marginLeft="auto">
+                    <Button
+                      colorScheme="pink"
+                      onClick={() => {
+                        if (!title.trim()) {
+                          alert("Please enter a valid title first!");
+                          return;
+                        }
+
+                        createAndStartCollaborationSession();
+                      }}
+                    >
+                      Collaborate
+                    </Button>
+                  </Box>
+                </>
+              ) : (
+                <>
+                  <Heading size="md" flex="1">
+                    {title}
+                  </Heading>
+                </>
+              )}
+            </HStack>
+            {isSaving ? (
+              <Center marginLeft="auto">
+                <Text as="span" paddingRight="2">
+                  Saving
+                </Text>
+                <Spinner size="sm" />
+              </Center>
+            ) : null}
+            {editHash == null && schemaId != null ? (
+              <Badge
+                ml="1"
+                fontSize="0.8em"
+                colorScheme="yellow"
+                marginLeft="auto"
+              >
+                READ-ONLY MODE
+              </Badge>
+            ) : null}
+          </Flex>
+          <Box ref={ref} flex="1">
+            {initialEditorSchema != null ? (
+              <React.Suspense fallback={null}>
+                <SchemaEditor
+                  editorProps={{
+                    height: bounds.height,
+                    theme: "vs-dark",
+                    options: {
+                      automaticLayout: true,
+                      minimap: {
+                        enabled: false,
+                      },
+                      readOnly: editHash == null && schemaId != null,
+                    },
+                    sharedLanguageService: languageService,
+                  }}
+                  schema={initialEditorSchema}
+                  onEditor={(editor, api) => {
+                    editorInterface.current = {
+                      editor,
+                      api,
+                    };
+                    if (editHash != null && yDocumentRef.current != null) {
+                      connect(api, editor, editHash, yDocumentRef.current);
+                    }
+                  }}
+                />
+              </React.Suspense>
+            ) : null}
+          </Box>
+        </Box>
+        {Array.isArray(collaborators) && viewer != null ? (
+          <CollaboratorList
+            collaborators={collaborators}
+            changeName={(name: string) => {
+              providerRef.current?.awareness.setLocalStateField(
+                "collaborator",
+                {
+                  name: name,
+                  color: viewer.color,
+                }
+              );
+              window.localStorage.setItem("collaboratorName", name);
             }}
+            viewer={viewer}
+            shareUrl={
+              editHash != null && schemaId != null
+                ? {
+                    edit: buildShareUrl(editHash),
+                    view: buildShareUrl(schemaId),
+                  }
+                : null
+            }
           />
-        </Box>
-        <Box
-          border="1px solid #E535AB"
-          borderRadius={6}
-          overflow={"hidden"}
-          p={4}
-        >
-          <ReactFlowProvider>
-            <ReactFlow
-              elements={elements}
-              nodesDraggable={false}
-              style={{ width: "100%", height: "80vh" }}
-            >
-              <MiniMap />
-              <Controls />
-            </ReactFlow>
-          </ReactFlowProvider>
-        </Box>
-      </SimpleGrid>
+        ) : null}
+      </Flex>
+      <Box height="3rem" backgroundColor="black" width="100%"></Box>
     </Page>
   );
 }
+
+const buildShareUrl = (idOrEditHash: string) =>
+  window.location.protocol +
+  "//" +
+  window.location.hostname +
+  (window.location.port ? `:${window.location.port}` : "") +
+  `${URL_PREFIX}${idOrEditHash}`;
+
+const CollaboratorList = (props: {
+  viewer: CollaboratorEntity;
+  collaborators: Array<{ id: string; color: string; name: string }>;
+  shareUrl: {
+    edit: string;
+    view: string;
+  } | null;
+  changeName: (value: string) => void;
+}) => (
+  <Box
+    width="250px"
+    display="flex"
+    flexDirection="column"
+    paddingLeft="1"
+    paddingRight="1"
+  >
+    <Box padding="2">
+      <Heading size="md" color="white">
+        Collaborators
+      </Heading>
+    </Box>
+    <Box flex="1">
+      <CollaboratorBox
+        collaborator={props.viewer}
+        additionalContent={
+          <Popover>
+            <PopoverTrigger>
+              <IconButton
+                marginLeft="auto"
+                aria-label="Change Name"
+                variant="ghost"
+                size="sm"
+                color={getFontColorForBackgroundColor(props.viewer.color)}
+                icon={<EditIcon />}
+              />
+            </PopoverTrigger>
+            <PopoverContent>
+              <PopoverArrow />
+              <PopoverCloseButton />
+              <PopoverHeader>
+                <Heading size="sm" color="white">
+                  Edit Name
+                </Heading>
+              </PopoverHeader>
+              <PopoverBody>
+                <ChangeNameForm
+                  name={props.viewer.name}
+                  changeName={props.changeName}
+                />
+              </PopoverBody>
+            </PopoverContent>
+          </Popover>
+        }
+      />
+      {props.collaborators.map((collaborator) => (
+        <CollaboratorBox key={collaborator.id} collaborator={collaborator} />
+      ))}
+    </Box>
+    {props.shareUrl != null ? (
+      <Box padding="2" paddingBottom="4" color="white">
+        <Popover>
+          <PopoverTrigger>
+            <Button colorScheme="pink" width="100%">
+              Invite Collaborator
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent>
+            <PopoverArrow />
+            <PopoverCloseButton />
+            <PopoverHeader>
+              <Heading size="sm" color="white">
+                Invite Collaborators
+              </Heading>
+            </PopoverHeader>
+            <PopoverBody>
+              <VStack spacing="2">
+                <Text>
+                  You can either invite a collaborator as an editor or viewer.
+                </Text>
+                <Box>
+                  <Text mb="4px" fontWeight="bold">
+                    Write
+                  </Text>
+                  <CopyInput defaultValue={props.shareUrl.edit} readOnly />
+                </Box>
+                <Box>
+                  <Text mb="4px" fontWeight="bold">
+                    Read
+                  </Text>
+                  <CopyInput defaultValue={props.shareUrl.view} readOnly />
+                </Box>
+              </VStack>
+            </PopoverBody>
+          </PopoverContent>
+        </Popover>
+      </Box>
+    ) : null}
+  </Box>
+);
+
+const CollaboratorBox = (props: {
+  collaborator: CollaboratorEntity;
+  additionalContent?: React.ReactElement;
+}) => {
+  return (
+    <Box
+      backgroundColor={props.collaborator.color}
+      color={getFontColorForBackgroundColor(props.collaborator.color)}
+      key={props.collaborator.id}
+      paddingLeft="2"
+      paddingRight="2"
+      paddingTop="1"
+      paddingBottom="1"
+      borderRadius="5px"
+      marginBottom="1"
+      marginLeft="2"
+      marginRight="2"
+      display="flex"
+      alignItems="center"
+    >
+      {props.collaborator.name}
+      {props.additionalContent}
+    </Box>
+  );
+};
+
+type CollaboratorEntity = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+const ChangeNameForm = (props: {
+  name: string;
+  changeName: (name: string) => void;
+}) => {
+  return (
+    <VStack
+      as="form"
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        const newName = (ev.target as any).nameInput.value.trim();
+        if (newName === "") {
+          return;
+        }
+        props.changeName(newName);
+      }}
+    >
+      <Input color="white" defaultValue={props.name} id="nameInput" />
+      <Button type="submit" size="sm" colorScheme="pink" width="100%">
+        Save
+      </Button>
+    </VStack>
+  );
+};
